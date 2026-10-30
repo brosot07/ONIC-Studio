@@ -1,7 +1,7 @@
 -- Libraries: Admin edits, designers only read, and expired or ended entries are invisible to designers.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(22);
+select plan(24);
 
 delete from public.user_roles;
 
@@ -86,6 +86,16 @@ reset role;
 select throws_ok($$insert into public.player_assets (player_id, kind, name, path, mime, bytes, has_alpha)
   values ('11000000-0000-4000-8000-000000000001', 'cutout', 'flat', 'p/flat.png', 'image/png', 10, false)$$,
   '23514', null, 'a cutout without a transparent background can never be stored');
+
+set local role service_role;
+select throws_ok($$select public.library_add_file('a1000000-0000-4000-8000-0000000000a1', 'players',
+  '{"player_id":"11000000-0000-4000-8000-000000000002","kind":"cutout","name":"x","path":"p/x.png","mime":"image/png","bytes":1,"has_alpha":true}',
+  (select lineage_id from public.player_assets where path = 'p/ok.png'))$$,
+  '22023', null, 'a new version cannot retire another player''s photo');
+select lives_ok($$select public.library_add_file('a1000000-0000-4000-8000-0000000000a1', 'players',
+  '{"player_id":"11000000-0000-4000-8000-000000000001","kind":"cutout","name":"v2","path":"p/ok-v2.png","mime":"image/png","bytes":1,"has_alpha":true}',
+  (select lineage_id from public.player_assets where path = 'p/ok.png'))$$, 'a new version of the same photo replaces the old one');
+reset role;
 
 select * from finish();
 rollback;

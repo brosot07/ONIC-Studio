@@ -4,7 +4,8 @@
 import { z } from 'npm:zod@4.6.7'
 import { HttpError, handle, json } from '../_shared/http.ts'
 import { rateLimit, requireAdmin, serverClient } from '../_shared/supabase.ts'
-import { checkFont, checkPdf, checkSvg, MIME, processRaster, Rejected, sniff, type FileType } from './checks.ts'
+import { checkFont, checkPdf, MIME, processRaster, Rejected, sniff, type FileType } from './checks.ts'
+import { cleanSvg } from './svg.ts'
 
 const uuid = z.uuid()
 const name = z.string().trim().min(1).max(160)
@@ -103,8 +104,8 @@ Deno.serve(
         const r = await processRaster(original, type, { minShortSide: rule.minShortSide ?? 1, needsTransparency: rule.transparent })
         ;({ bytes, width, height, hasAlpha } = r)
         finalType = r.type
-      } else if (type === 'svg') checkSvg(original)
-      else if (type === 'pdf') checkPdf(original)
+      } else if (type === 'svg') bytes = cleanSvg(original)
+      else if (type === 'pdf') await checkPdf(original)
       else checkFont(original, type)
 
       const ext = finalType === 'jpeg' ? 'jpg' : finalType

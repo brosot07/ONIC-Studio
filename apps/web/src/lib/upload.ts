@@ -23,6 +23,7 @@ const REJECTION_KEYS: Record<string, MessageKey> = {
   unsafe_pdf: 'upload.error.unsafe_pdf',
   bad_font: 'upload.error.bad_font',
   unreadable: 'upload.error.unreadable',
+  animated: 'upload.error.animated',
 }
 
 /** Name shown in the library: the file name without its extension. */
@@ -63,8 +64,14 @@ export const uploadToLibrary = async (file: File, target: UploadTarget): Promise
 /** Short-lived links (10 minutes) to show private library files. */
 export const signedUrls = async (bucket: 'brand' | 'players' | 'sponsors', paths: string[]): Promise<Record<string, string>> => {
   if (!supabase || paths.length === 0) return {}
-  const { data } = await supabase.storage.from(bucket).createSignedUrls(paths, 600)
+  // PDFs are signed as downloads, so they never open as a page on the storage site.
+  const pdfs = paths.filter((p) => p.endsWith('.pdf'))
+  const others = paths.filter((p) => !p.endsWith('.pdf'))
+  const [a, b] = await Promise.all([
+    others.length ? supabase.storage.from(bucket).createSignedUrls(others, 600) : Promise.resolve({ data: [] }),
+    pdfs.length ? supabase.storage.from(bucket).createSignedUrls(pdfs, 600, { download: true }) : Promise.resolve({ data: [] }),
+  ])
   const out: Record<string, string> = {}
-  for (const d of data ?? []) if (d.path && d.signedUrl) out[d.path] = d.signedUrl
+  for (const d of [...(a.data ?? []), ...(b.data ?? [])]) if (d.path && d.signedUrl) out[d.path] = d.signedUrl
   return out
 }

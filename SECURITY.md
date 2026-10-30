@@ -41,12 +41,23 @@ chat or log.
   matching files can't be opened either (storage policies follow the same rows). QC will block them too.
 - Files live in private buckets. Browsers only get 10-minute signed links. Admins upload into their own folder of a
   private `staging` bucket; nothing reaches a library except through `library-upload`.
-- `library-upload` identifies files by their bytes (never the name or browser-supplied type), enforces size limits,
-  decodes and re-encodes PNG/JPG (stripping metadata and anything appended), requires real transparency for player
-  cutouts (also enforced by a database check), refuses SVGs with scripts, event handlers, entities, `foreignObject`
-  or outside links, refuses PDFs with JavaScript, launch actions or attachments, and checks font table directories.
-  SVGs are only ever displayed through `<img>`, where scripts can't run even if one slipped through.
-- Library rows can't be repointed at another file; every change is in the audit log with the acting Admin.
+- `library-upload` identifies files by their bytes (never the name or browser-supplied type) and enforces size limits.
+  - PNG/JPG: the declared size is read from the header *before* decoding (no decompression bombs), animated PNGs
+    are refused, and images are decoded and re-encoded (stripping metadata and anything appended). Player cutouts
+    need real transparency (also a database check).
+  - SVG: parsed as XML and **rebuilt from an allow-list** of SVG elements and attributes. Scripts, event handlers,
+    `foreignObject`, animation, `<style>`, prefixed/namespaced elements, CSS escapes, character references in values
+    and any link outside the file are dropped; document-type declarations are refused. Parsing is linear-time.
+    SVGs are shown through `<img>` only.
+  - PDF: names are decoded (`#xx` escapes) and compressed streams unpacked (100 MB cap) before checking for
+    JavaScript, launch, attachments, rich media, form submission, remote documents or XFA. PDFs are offered as
+    downloads, never opened as a page on the storage site.
+  - Fonts: table directory checks only (fonts are stored, not rendered by the browser, until Phase 4).
+- Library rows can't be repointed at another file; a new version can only replace a file of the same owner and kind,
+  versions are unique per lineage, and replacements are serialised. Every change is in the audit log.
+- Older versions stay readable to the people who can see the current one (version history). A signed link made just
+  before a player is hidden keeps working for at most 10 minutes.
+- Spreadsheet imports store text as typed. Any future export to CSV must prefix cells starting with `= + - @` with `'`.
 - The image decoder (`jsr:@matmen/imagescript@1.3.1`, by its author) is pinned; it loads its WebAssembly codec from
   jsr.io at that pinned version.
 
@@ -130,3 +141,4 @@ cover the same ground in CI.
 | 1 | The deploy token (`SUPABASE_ACCESS_TOKEN`) has full access to the ONIC Studio project, broader than the deploy needs | Accepted by the Admin for now; it lives only in the protected `production` environment. Narrow it at the next 90-day rotation |
 | 2 | Storage policies compared the asset's display name instead of the file path, so no one could open player files | Fixed before release (caught by the new library tests) |
 | 2 | Newest imagescript releases (3.x) were published days ago | Pinned to 1.3.1 (2025) until newer versions have settled |
+| 2 | Independent review: SVG checks bypassable (namespaced `script`, character references, CSS escapes), quadratic regex, PDF names/compressed streams, image decompression bomb, unchecked version replacement | Fixed: allow-list SVG rebuild, PDF unpack + name decoding + download-only, header size check before decode, replacement checks + unique versions + lock; every bypass is a unit test |

@@ -153,10 +153,11 @@ const en = {
   'upload.error.too_big_pixels': 'This image is too large in pixels. Keep each side under {max}.',
   'upload.error.no_transparency': 'This cutout has a solid background. Export it as a PNG with a transparent background, then upload it again.',
   'upload.error.unsafe_svg':
-    'This SVG contains code or links to outside files. Export it again as a plain SVG (Illustrator: Export As → SVG, Styling: Presentation Attributes).',
+    'This SVG contains a document-type header, code or links to outside files. Export it again as a plain SVG (Illustrator: Export As → SVG, Styling: Presentation Attributes).',
   'upload.error.unsafe_pdf': 'This PDF contains scripts or attached files. Save it again as a plain PDF and upload that.',
   'upload.error.bad_font': 'This font file looks damaged. Download it again from where you bought it.',
   'upload.error.unreadable': 'This file can’t be opened. Check it opens on your computer, then try again.',
+  'upload.error.animated': 'Animated images aren’t accepted here. Export a single still frame as PNG.',
 
   'library.readOnly': 'Only Admins can change the libraries.',
   'library.empty': 'Nothing here yet.',
@@ -433,6 +434,7 @@ const id: Record<MessageKey, string> = {
   'upload.error.unsafe_pdf': 'PDF ini berisi skrip atau lampiran. Simpan ulang sebagai PDF biasa lalu unggah.',
   'upload.error.bad_font': 'File font ini sepertinya rusak. Unduh ulang dari tempat kamu membelinya.',
   'upload.error.unreadable': 'File ini tidak bisa dibuka. Pastikan bisa dibuka di komputermu, lalu coba lagi.',
+  'upload.error.animated': 'Gambar animasi tidak diterima di sini. Ekspor satu frame diam sebagai PNG.',
 
   'library.readOnly': 'Hanya Admin yang bisa mengubah library.',
   'library.empty': 'Belum ada isinya.',

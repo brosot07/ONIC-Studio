@@ -4,7 +4,8 @@ import { totp } from '../support/totp'
 import { testPng } from '../support/png'
 
 const LOGO_SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 40"><rect width="100" height="40" fill="#FFD31A"/></svg>')
-const EVIL_SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><rect width="10" height="10"/></svg>')
+const EVIL_SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><script>alert(2)</script><rect width="10" height="10"/></svg>')
+const DOCTYPE_SVG = Buffer.from('<!DOCTYPE svg [<!ENTITY ns "x">]><svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>')
 
 let adminSecret = ''
 
@@ -48,11 +49,23 @@ test('Admin sees the setup checklist on Home and uploads the primary logo', asyn
   await page.screenshot({ path: 'test-results/local/setup.png', fullPage: true })
 })
 
-test('an SVG with code in it is refused with instructions', async ({ page }) => {
+test('an SVG with code in it is stored with the code removed', async ({ page }) => {
   await signInAs(page, 'boss@onic.test', adminSecret)
   const slot = page.locator('.slot', { hasText: 'ONIC logo, mono' })
   await slot.locator('input[type=file]').setInputFiles({ name: 'evil.svg', mimeType: 'image/svg+xml', buffer: EVIL_SVG })
-  await expect(slot.locator('.is-refused')).toContainText('This SVG contains code or links to outside files')
+  await expect(slot.getByText('evil.svg added')).toBeVisible()
+  const db = serverClient()
+  const { data: row } = await db.from('brand_assets').select('path').eq('variant', 'mono').single()
+  const stored = await (await db.storage.from('brand').download(row!.path)).data!.text()
+  expect(stored).toContain('<rect')
+  expect(stored).not.toMatch(/onload|script|alert/)
+})
+
+test('an SVG with a document-type header is refused with instructions', async ({ page }) => {
+  await signInAs(page, 'boss@onic.test', adminSecret)
+  const slot = page.locator('.slot', { hasText: 'ONIC logo, white' })
+  await slot.locator('input[type=file]').setInputFiles({ name: 'illustrator.svg', mimeType: 'image/svg+xml', buffer: DOCTYPE_SVG })
+  await expect(slot.locator('.is-refused')).toContainText('Export it again as a plain SVG')
   await expect(slot.locator('.pill').first()).toHaveText('Needed')
 })
 

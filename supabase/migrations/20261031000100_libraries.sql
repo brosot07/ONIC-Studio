@@ -30,6 +30,7 @@ create table public.brand_assets (
   created_at timestamptz not null default now()
 );
 create index brand_assets_kind_idx on public.brand_assets (kind, brand) where is_current;
+create unique index brand_assets_version_key on public.brand_assets (lineage_id, version);
 
 create table public.brand_colors (
   id uuid primary key default gen_random_uuid(),
@@ -88,6 +89,7 @@ create table public.player_assets (
   check (kind <> 'cutout' or has_alpha)
 );
 create index player_assets_player_idx on public.player_assets (player_id) where is_current;
+create unique index player_assets_version_key on public.player_assets (lineage_id, version);
 
 create table public.sponsors (
   id uuid primary key default gen_random_uuid(),
@@ -128,6 +130,7 @@ create table public.sponsor_assets (
   created_at timestamptz not null default now()
 );
 create index sponsor_assets_sponsor_idx on public.sponsor_assets (sponsor_id) where is_current;
+create unique index sponsor_assets_version_key on public.sponsor_assets (lineage_id, version);
 
 -- Which posts and designs used which asset (written by the server in later phases).
 create table public.asset_usage (
@@ -289,8 +292,16 @@ declare
   next_version integer := 1;
 begin
   perform set_config('onic.actor', p_actor::text, true);
+  -- One upload at a time per lineage, so two replacements can't claim the same version.
+  if p_replaces is not null then
+    perform pg_advisory_xact_lock(hashtext('onic.lineage.' || p_replaces::text));
+  end if;
   if p_library = 'brand' then
     if p_replaces is not null then
+      if not exists (select 1 from public.brand_assets where lineage_id = p_replaces
+                     and kind = (p_row->>'kind')::public.brand_asset_kind) then
+        raise exception 'replaced file must be the same kind' using errcode = '22023';
+      end if;
       select coalesce(max(version), 0) + 1 into next_version from public.brand_assets where lineage_id = p_replaces;
       update public.brand_assets set is_current = false where lineage_id = p_replaces;
     end if;
@@ -301,6 +312,10 @@ begin
     returning id into new_id;
   elsif p_library = 'players' then
     if p_replaces is not null then
+      if not exists (select 1 from public.player_assets where lineage_id = p_replaces
+                     and player_id = (p_row->>'player_id')::uuid and kind = (p_row->>'kind')::public.player_asset_kind) then
+        raise exception 'replaced file must belong to the same player and kind' using errcode = '22023';
+      end if;
       select coalesce(max(version), 0) + 1 into next_version from public.player_assets where lineage_id = p_replaces;
       update public.player_assets set is_current = false where lineage_id = p_replaces;
     end if;
@@ -311,6 +326,10 @@ begin
     returning id into new_id;
   elsif p_library = 'sponsors' then
     if p_replaces is not null then
+      if not exists (select 1 from public.sponsor_assets where lineage_id = p_replaces
+                     and sponsor_id = (p_row->>'sponsor_id')::uuid and kind = (p_row->>'kind')::public.sponsor_asset_kind) then
+        raise exception 'replaced file must belong to the same sponsor and kind' using errcode = '22023';
+      end if;
       select coalesce(max(version), 0) + 1 into next_version from public.sponsor_assets where lineage_id = p_replaces;
       update public.sponsor_assets set is_current = false where lineage_id = p_replaces;
     end if;

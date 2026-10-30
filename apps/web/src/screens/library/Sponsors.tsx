@@ -82,21 +82,22 @@ const saveSponsorCsvRow = async (r: Record<string, string>): Promise<string | nu
   for (const k of ['contract_start', 'contract_end']) {
     if (r[k] && !/^\d{4}-\d{2}-\d{2}$/.test(r[k]!)) return `${k} must look like 2027-12-31`
   }
-  const { error } = await supabase!.from('sponsors').insert(
-    toRow({
+  const { error } = await supabase!.from('sponsors').insert({
+    ...toRow({
       name: r['name'],
       tier: r['tier'] ?? '',
       instagram_handle: r['instagram_handle'] ?? '',
       contract_start: r['contract_start'] ?? '',
       contract_end: r['contract_end'] ?? '',
       monthly_deliverables: r['monthly_deliverables'] ?? '',
-      mandatory_tags: [r['mandatory_tags'], r['mentions']].filter(Boolean).join(';'),
+      mandatory_tags: r['mandatory_tags'] ?? '',
       hashtags: r['hashtags'] ?? '',
       conflicts: r['conflicts'] ?? '',
       placement_rules: r['placement_rules'] ?? '',
       min_logo_px: r['min_logo_px'] ?? '',
     }),
-  )
+    mentions: listCell(r['mentions']),
+  })
   return error ? (error.code === '23505' ? 'already in the list' : 'could not be saved — check dates and numbers') : null
 }
 
