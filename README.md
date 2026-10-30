@@ -23,6 +23,9 @@ cp apps/web/.env.example apps/web/.env   # public URL + publishable key only
 npm run dev                              # http://localhost:5173
 ```
 
+Local Supabase (Docker): `npx supabase start`, then `npx supabase test db` for the access-rule tests and
+`npx playwright test -c playwright.local.config.ts` for the sign-in journeys.
+
 Checks (the same ones CI runs):
 
 ```bash
