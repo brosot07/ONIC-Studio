@@ -4,7 +4,7 @@
 // - The build stops if a licence isn't the permissive one we expect.
 // Usage: npm run vendor-skills
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, mkdirSync } from 'node:fs'
+import { copyFileSync, existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative, dirname } from 'node:path'
 
@@ -47,27 +47,41 @@ const SOURCES = [
   },
 ]
 
+// Each licence must contain its standard grant and must not carry riders that restrict use.
 const LICENSE_MARKERS = {
-  MIT: /Permission is hereby granted, free of charge/,
-  'Apache-2.0': /Apache License[\s\S]*Version 2\.0/,
+  MIT: /Permission is hereby granted, free of charge, to any person obtaining a copy[\s\S]*THE SOFTWARE IS PROVIDED "AS IS"/,
+  'Apache-2.0': /Apache License\s+Version 2\.0, January 2004[\s\S]*TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION[\s\S]*END OF TERMS AND CONDITIONS/,
 }
+const RESTRICTIVE_RIDERS = /Commons Clause|non-commercial|noncommercial|All rights reserved\.?\s*$/im
 
 const root = new URL('..', import.meta.url).pathname
 const out = join(root, 'skills-vendor')
 const work = mkdtempSync(join(tmpdir(), 'onic-skills-'))
 
+// Symlinks are refused outright: a skill must not be able to point us at files outside itself.
 const markdownFiles = (dir) =>
   readdirSync(dir).flatMap((name) => {
     if (name.startsWith('.')) return []
     const full = join(dir, name)
-    if (statSync(full).isDirectory()) return markdownFiles(full)
+    const stat = lstatSync(full)
+    if (stat.isSymbolicLink()) throw new Error(`Symlink not allowed in a skill: ${full}`)
+    if (stat.isDirectory()) return markdownFiles(full)
     return name.endsWith('.md') ? [full] : []
   })
+
+const insideOf = (parent, child) => !relative(realpathSync(parent), realpathSync(child)).startsWith('..')
+
+// A licence file inside a skill folder can override the repo's licence, so each one must pass the same check.
+const extraLicenses = (dir, allowed) =>
+  readdirSync(dir, { recursive: true })
+    .map(String)
+    .filter((p) => /(^|\/)(LICEN[CS]E|COPYING|NOTICE)[^/]*$/i.test(p) && p !== allowed)
 
 const checkLicense = (path, spdx, where) => {
   if (!existsSync(path)) throw new Error(`${where}: licence file missing (${path})`)
   const text = readFileSync(path, 'utf8')
   if (!LICENSE_MARKERS[spdx].test(text)) throw new Error(`${where}: licence is not ${spdx}`)
+  if (RESTRICTIVE_RIDERS.test(text)) throw new Error(`${where}: licence has a restrictive rider`)
   return text
 }
 
@@ -81,10 +95,23 @@ try {
     execFileSync('git', ['init', '-q', dir])
     execFileSync('git', ['-C', dir, 'fetch', '-q', '--depth', '1', `https://github.com/${src.repo}`, src.commit])
     execFileSync('git', ['-C', dir, 'checkout', '-q', 'FETCH_HEAD'])
+    // GitHub serves commits from forks under the upstream URL; require the pin to be on upstream's own history.
+    execFileSync('git', ['-C', dir, 'fetch', '-q', '--filter=blob:none', `https://github.com/${src.repo}`, 'HEAD'])
+    try {
+      execFileSync('git', ['-C', dir, 'merge-base', '--is-ancestor', src.commit, 'FETCH_HEAD'])
+    } catch {
+      throw new Error(`${src.repo}: ${src.commit} is not on the upstream default branch`)
+    }
 
     for (const [name, path] of Object.entries(src.skills)) {
       const skillDir = join(dir, path)
       if (!existsSync(join(skillDir, 'SKILL.md'))) throw new Error(`${src.repo}/${path}: no SKILL.md`)
+      if (!insideOf(dir, skillDir)) throw new Error(`${src.repo}/${path}: escapes the repository`)
+      if (path !== '.') {
+        for (const extra of extraLicenses(skillDir, src.license.perSkill ? src.license.file : '')) {
+          checkLicense(join(skillDir, extra), src.license.spdx, `${src.repo}/${path}/${extra}`)
+        }
+      }
       const licensePath = src.license.perSkill ? join(skillDir, src.license.file) : join(dir, src.license.file)
       const licenseText = checkLicense(licensePath, src.license.spdx, `${src.repo}/${path}`)
 
@@ -92,7 +119,7 @@ try {
       for (const file of files) {
         const target = join(out, name, relative(skillDir, file))
         mkdirSync(dirname(target), { recursive: true })
-        cpSync(file, target)
+        copyFileSync(file, target)
       }
       notices.push({ name, repo: src.repo, path, commit: src.commit, spdx: src.license.spdx, licenseText })
     }

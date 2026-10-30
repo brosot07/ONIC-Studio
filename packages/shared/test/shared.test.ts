@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { canTransition, messages, JOB_STATES } from '../src'
 
 describe('job state machine', () => {
-  it('only reaches APPROVED from PENDING_APPROVAL', () => {
+  it('reaches APPROVED only from PENDING_APPROVAL (or by unscheduling)', () => {
     for (const from of JOB_STATES) {
       expect(canTransition(from, 'APPROVED')).toBe(from === 'PENDING_APPROVAL' || from === 'SCHEDULED')
     }

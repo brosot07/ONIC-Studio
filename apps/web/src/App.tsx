@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './lib/supabase'
 import { usePrefs } from './lib/prefs'
+import { useIdleTimeout } from './lib/idle'
 import { Login } from './screens/Login'
 import { PrefsBar } from './ui/PrefsBar'
 
@@ -20,6 +21,9 @@ export const App = () => {
     return () => data.subscription.unsubscribe()
   }, [])
 
+  const signOut = useCallback(() => void supabase?.auth.signOut(), [])
+  useIdleTimeout(Boolean(session), signOut)
+
   if (!ready) return null
 
   if (!session) return <Login />
@@ -28,7 +32,7 @@ export const App = () => {
     <main className="placeholder">
       <PrefsBar />
       <p>{t('login.signedIn')}</p>
-      <button type="button" className="btn btn-quiet" onClick={() => void supabase?.auth.signOut()}>
+      <button type="button" className="btn btn-quiet" onClick={signOut}>
         {t('login.signOut')}
       </button>
     </main>
