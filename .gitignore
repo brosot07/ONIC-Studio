@@ -1,0 +1,16 @@
+node_modules/
+out/
+dist/
+release/
+*.log
+.DS_Store
+# Local settings. Only the publishable Supabase URL/key ever go here — never a secret.
+.env
+.env.*
+!.env.example
+supabase/.temp/
+supabase/.branches/
+electronegativity.sarif
+coverage/
+test-results/
+playwright-report/

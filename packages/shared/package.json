@@ -1,0 +1,13 @@
+{
+  "name": "@onic/shared",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Types, schemas and plain-language strings shared by the app, the agents and the Edge Functions.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  }
+}

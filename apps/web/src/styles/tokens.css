@@ -1,0 +1,62 @@
+/*
+ * ONIC Studio tokens. ONIC yellow is a placeholder until the Brand library (Phase 2)
+ * supplies the official palette.
+ */
+:root {
+  --onic-yellow: #ffd31a;
+  --onic-yellow-ink: #1a1600;
+  --ink: #101114;
+  --graphite: #1c1e23;
+  --steel: #2c2f36;
+  --fog: #8a8e96;
+  --paper: #f4f4f1;
+  --white: #ffffff;
+  --danger: #d93a3f;
+
+  --font: 'Archivo Variable', system-ui, sans-serif;
+  --step--1: 0.8125rem;
+  --step-0: 0.9375rem;
+  --step-1: 1.125rem;
+  --step-2: 1.5rem;
+  --step-3: 2rem;
+
+  --radius-s: 6px;
+  --radius-m: 10px;
+
+  /* light */
+  --bg: var(--paper);
+  --surface: var(--white);
+  --text: var(--ink);
+  --text-muted: #555a63;
+  --line: #d9d9d3;
+  --focus: #0a66ff;
+  --error-bg: #fdecec;
+  --error-text: #8f1d21;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: var(--ink);
+    --surface: var(--graphite);
+    --text: #ecedef;
+    --text-muted: var(--fog);
+    --line: var(--steel);
+    --focus: #6aa5ff;
+    --error-bg: #3a1617;
+    --error-text: #ffb4b6;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --bg: var(--ink);
+  --surface: var(--graphite);
+  --text: #ecedef;
+  --text-muted: var(--fog);
+  --line: var(--steel);
+  --focus: #6aa5ff;
+  --error-bg: #3a1617;
+  --error-text: #ffb4b6;
+  color-scheme: dark;
+}
