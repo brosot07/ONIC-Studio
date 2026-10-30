@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { SUB_BRANDS, type BrandSlot, type MessageKey } from '@onic/shared'
+import type { BrandSlot, MessageKey } from '@onic/shared'
 import { supabase } from '../../lib/supabase'
 import { usePrefs } from '../../lib/prefs'
 import { displayName, uploadToLibrary } from '../../lib/upload'
@@ -7,6 +7,7 @@ import type { BrandAsset } from '../../lib/library'
 import { DropZone } from '../../ui/DropZone'
 import { ReadyChip } from '../../ui/Chip'
 import { FileTiles } from './FileTiles'
+import { SubBrandPicker } from './SubBrandPicker'
 
 const HINT: Record<BrandSlot['kind'], MessageKey> = {
   logo: 'slot.hint.logo',
@@ -40,7 +41,7 @@ export const BrandSlotRow = ({
   onChange: () => void
 }) => {
   const { t } = usePrefs()
-  const [subBrand, setSubBrand] = useState(SUB_BRANDS[0]!)
+  const [subBrand, setSubBrand] = useState('')
   const mine = slotAssets(slot, assets)
 
   const upload = (file: File) =>
@@ -73,16 +74,7 @@ export const BrandSlotRow = ({
       />
       {isAdmin && (
         <>
-          {slot.needsBrand && (
-            <label className="field field-inline">
-              <span>{t('slot.subBrand')}</span>
-              <select value={subBrand} onChange={(e) => setSubBrand(e.target.value)}>
-                {SUB_BRANDS.map((b) => (
-                  <option key={b}>{b}</option>
-                ))}
-              </select>
-            </label>
-          )}
+          {slot.needsBrand && <SubBrandPicker value={subBrand} onPick={setSubBrand} />}
           <DropZone accept={slot.accept} multiple={slot.multiple} hasFile={mine.length > 0} onUpload={upload} onDone={onChange} />
         </>
       )}

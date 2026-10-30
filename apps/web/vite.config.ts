@@ -16,6 +16,7 @@ if (e2eApi && /^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(e2eApi)) {
   securityHeaders['Content-Security-Policy'] = csp
     .replace('connect-src ', `connect-src ${e2eApi} `)
     .replace('img-src ', `img-src ${e2eApi} `)
+    .replace('media-src ', `media-src ${e2eApi} `)
     .replace('; upgrade-insecure-requests', '')
 }
 

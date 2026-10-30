@@ -96,6 +96,7 @@ const en = {
   'make.product_visual': 'Product visual',
   'make.product_visual.hint': 'Your design on a tee, jersey, hoodie or cap',
 
+  'shell.library': 'Library',
   'shell.brand': 'Brand',
   'shell.players': 'Players',
   'shell.sponsors': 'Sponsors',
@@ -139,6 +140,9 @@ const en = {
   'slot.hint.template': 'Past approved posts or layout files: PNG, JPG, SVG or PDF.',
   'slot.hint.pdf': 'One PDF.',
   'slot.subBrand': 'Which sub-brand?',
+  'slot.subBrand.add': '+ Add a new sub-brand…',
+  'slot.subBrand.newName': 'New sub-brand name',
+  'slot.subBrand.exists': 'That sub-brand is already on the list. Pick it from the menu.',
 
   'drop.cta': 'Drop files here or click to choose',
   'drop.ctaOne': 'Drop a file here or click to choose',
@@ -212,6 +216,7 @@ const en = {
   'players.kind.cutout': 'Cutout (transparent PNG)',
   'players.kind.headshot': 'Headshot',
   'players.kind.action': 'Action photo',
+  'players.kind.video': 'Videos (MP4 or MOV)',
   'players.add': 'Add a player',
 
   'sponsors.title': 'Sponsors',
@@ -373,6 +378,7 @@ const id: Record<MessageKey, string> = {
   'make.product_visual': 'Visual produk',
   'make.product_visual.hint': 'Desainmu di kaos, jersey, hoodie, atau topi',
 
+  'shell.library': 'Pustaka',
   'shell.brand': 'Brand',
   'shell.players': 'Pemain',
   'shell.sponsors': 'Sponsor',
@@ -416,6 +422,9 @@ const id: Record<MessageKey, string> = {
   'slot.hint.template': 'Konten lama yang sudah disetujui atau file layout: PNG, JPG, SVG, atau PDF.',
   'slot.hint.pdf': 'Satu PDF.',
   'slot.subBrand': 'Sub-brand yang mana?',
+  'slot.subBrand.add': '+ Tambah sub-brand baru…',
+  'slot.subBrand.newName': 'Nama sub-brand baru',
+  'slot.subBrand.exists': 'Sub-brand itu sudah ada di daftar. Pilih dari menu.',
 
   'drop.cta': 'Taruh file di sini atau klik untuk memilih',
   'drop.ctaOne': 'Taruh file di sini atau klik untuk memilih',
@@ -489,6 +498,7 @@ const id: Record<MessageKey, string> = {
   'players.kind.cutout': 'Cutout (PNG transparan)',
   'players.kind.headshot': 'Headshot',
   'players.kind.action': 'Foto aksi',
+  'players.kind.video': 'Video (MP4 atau MOV)',
   'players.add': 'Tambah pemain',
 
   'sponsors.title': 'Sponsor',

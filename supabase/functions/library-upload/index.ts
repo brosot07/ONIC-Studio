@@ -4,7 +4,7 @@
 import { z } from 'npm:zod@4.6.7'
 import { HttpError, handle, json } from '../_shared/http.ts'
 import { rateLimit, requireAdmin, serverClient } from '../_shared/supabase.ts'
-import { checkFont, checkPdf, MIME, processRaster, Rejected, sniff, type FileType } from './checks.ts'
+import { checkFont, checkPdf, MIME, processRaster, Rejected, sniff, sniffVideo, type FileType } from './checks.ts'
 import { cleanSvg } from './svg.ts'
 
 const uuid = z.uuid()
@@ -26,7 +26,7 @@ const Body = z.discriminatedUnion('library', [
     library: z.literal('players'),
     staging_path: z.string().max(300),
     player_id: uuid,
-    kind: z.enum(['cutout', 'headshot', 'action']),
+    kind: z.enum(['cutout', 'headshot', 'action', 'video']),
     name,
     tags,
     replaces: uuid.optional(),
@@ -54,14 +54,54 @@ const RULES: Record<string, { types: FileType[]; minShortSide?: number; transpar
   'players:cutout': { types: ['png'], minShortSide: 800, transparent: true },
   'players:headshot': { types: ['jpeg', 'png'], minShortSide: 600 },
   'players:action': { types: ['jpeg', 'png'], minShortSide: 800 },
+  'players:video': { types: ['mp4', 'mov'] },
   'sponsors:logo_light': { types: ['svg', 'png'], minShortSide: 256 },
   'sponsors:logo_dark': { types: ['svg', 'png'], minShortSide: 256 },
   'sponsors:logo_mono': { types: ['svg', 'png'], minShortSide: 256 },
   'sponsors:guideline': { types: ['pdf'] },
 }
 
+const MAX_FILE = 50 * 1024 * 1024
+const MAX_VIDEO = 500 * 1024 * 1024
+
 const LABEL: Record<FileType, string> = {
   png: 'PNG', jpeg: 'JPG', webp: 'WebP', svg: 'SVG', pdf: 'PDF', otf: 'OTF', ttf: 'TTF', woff: 'WOFF', woff2: 'WOFF2',
+  mp4: 'MP4', mov: 'MOV',
+}
+
+/**
+ * Videos are checked by their first bytes and size, then streamed from staging into the players library
+ * without loading the whole file into memory.
+ */
+const storeVideo = async (db: ReturnType<typeof serverClient>, stagingPath: string, pathNoExt: string) => {
+  const { data: signed, error: signErr } = await db.storage.from('staging').createSignedUrl(stagingPath, 300)
+  if (signErr || !signed) throw new Rejected('missing')
+  const head = await fetch(signed.signedUrl, { headers: { Range: 'bytes=0-4095' } })
+  if (!head.ok) throw new Rejected('missing')
+  const total = Number(head.headers.get('content-range')?.split('/')[1] ?? head.headers.get('content-length') ?? 0)
+  // Read at most the first 4 KB, even if storage ignored the range and sent the whole file.
+  const reader = head.body!.getReader()
+  const first = new Uint8Array(4096)
+  let got = 0
+  while (got < first.length) {
+    const { done, value } = await reader.read()
+    if (done) break
+    const take = value.subarray(0, first.length - got)
+    first.set(take, got)
+    got += take.length
+  }
+  await reader.cancel()
+  const type = sniffVideo(first.subarray(0, got))
+  if (!type) throw new Rejected('wrong_type', { allowed: 'MP4, MOV' })
+  if (!total) throw new Rejected('unreadable')
+  if (total > MAX_VIDEO) throw new Rejected('too_large', { max: '500 MB' })
+
+  const full = await fetch(signed.signedUrl)
+  if (!full.ok || !full.body) throw new Rejected('missing')
+  const path = `${pathNoExt}.${type}`
+  const { error } = await db.storage.from('players').upload(path, full.body, { contentType: MIME[type], upsert: false, duplex: 'half' })
+  if (error) throw error
+  return { path, mime: MIME[type], bytes: total }
 }
 
 Deno.serve(
@@ -82,11 +122,27 @@ Deno.serve(
     const removeStaged = () => db.storage.from('staging').remove([body.staging_path])
 
     try {
+      if (body.library === 'players' && body.kind === 'video') {
+        const out = await storeVideo(db, body.staging_path, `${body.player_id}/video/${crypto.randomUUID()}`)
+        const { data: id, error: regErr } = await db.rpc('library_add_file', {
+          p_actor: caller.id,
+          p_library: 'players',
+          p_row: { kind: 'video', name: body.name, path: out.path, mime: out.mime, bytes: out.bytes, width: null, height: null, player_id: body.player_id, tags: body.tags, has_alpha: false },
+          p_replaces: body.replaces ?? null,
+        })
+        if (regErr) {
+          await db.storage.from('players').remove([out.path])
+          throw regErr
+        }
+        await removeStaged()
+        return json(req, 200, { ok: true, id, path: out.path })
+      }
+
       const { data: blob, error: dlErr } = await db.storage.from('staging').download(body.staging_path)
       if (dlErr || !blob) throw new Rejected('missing')
       const original = new Uint8Array(await blob.arrayBuffer())
       if (original.length === 0) throw new Rejected('unreadable')
-      if (original.length > 50 * 1024 * 1024) throw new Rejected('too_large', { max: '50 MB' })
+      if (original.length > MAX_FILE) throw new Rejected('too_large', { max: '50 MB' })
 
       const rule = RULES[`${body.library}:${body.kind}`]!
       const type = sniff(original)

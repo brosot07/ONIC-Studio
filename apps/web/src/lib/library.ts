@@ -102,3 +102,8 @@ export const loadVoices = async (): Promise<VoiceGuide[]> => {
   const { data } = await supabase!.from('voice_guides').select('id, account, language, sample_captions, banned_words, banned_topics').order('account')
   return (data ?? []) as VoiceGuide[]
 }
+
+export const loadSubBrands = async (): Promise<string[]> => {
+  const { data } = await supabase!.from('sub_brands').select('name').order('name')
+  return (data ?? []).map((r: { name: string }) => r.name)
+}

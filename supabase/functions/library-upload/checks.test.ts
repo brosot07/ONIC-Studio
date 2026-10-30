@@ -1,6 +1,6 @@
 import { assertEquals, assertRejects, assertThrows } from 'jsr:@std/assert@1.0.13'
 import { Image } from 'jsr:@matmen/imagescript@1.3.1'
-import { checkFont, checkPdf, processRaster, Rejected, sniff } from './checks.ts'
+import { checkFont, checkPdf, processRaster, Rejected, sniff, sniffVideo } from './checks.ts'
 import { cleanSvg } from './svg.ts'
 
 const enc = (s: string) => new TextEncoder().encode(s)
@@ -140,4 +140,20 @@ Deno.test('broken font files are refused', () => {
   const ttf = new Uint8Array(64)
   ttf.set([0x00, 0x01, 0x00, 0x00, 0x00, 0x40]) // claims 64 tables in a 64-byte file
   assertThrows(() => checkFont(ttf, 'ttf'), Rejected, 'bad_font')
+})
+
+Deno.test('videos are recognised by their ftyp box, not their name', () => {
+  const box = (brand: string, size = 24) => {
+    const b = new Uint8Array(64)
+    new DataView(b.buffer).setUint32(0, size)
+    b.set(new TextEncoder().encode('ftyp' + brand), 4)
+    return b
+  }
+  assertEquals(sniffVideo(box('isom')), 'mp4')
+  assertEquals(sniffVideo(box('mp42')), 'mp4')
+  assertEquals(sniffVideo(box('qt  ')), 'mov')
+  assertEquals(sniffVideo(box('heic')), null) // a photo container, not a video
+  assertEquals(sniffVideo(box('isom', 4)), null) // impossible box size
+  assertEquals(sniffVideo(new TextEncoder().encode('<html><body>ftypisom</body></html>')), null)
+  assertEquals(sniffVideo(new Uint8Array(8)), null)
 })
