@@ -107,3 +107,60 @@ export const loadSubBrands = async (): Promise<string[]> => {
   const { data } = await supabase!.from('sub_brands').select('name').order('name')
   return (data ?? []).map((r: { name: string }) => r.name)
 }
+
+export type EventKind = 'match_day' | 'tournament' | 'photoshoot' | 'behind_the_scenes' | 'community' | 'other'
+export const EVENT_KINDS: readonly EventKind[] = ['match_day', 'tournament', 'photoshoot', 'behind_the_scenes', 'community', 'other']
+
+export interface EventRow {
+  id: string
+  name: string
+  kind: EventKind
+  starts_on: string
+  ends_on: string | null
+  sub_brand: string | null
+  opponent: string | null
+  location: string | null
+  created_by: string | null
+  event_media: { kind: 'photo' | 'video' }[]
+}
+
+export interface EventMedia {
+  id: string
+  event_id: string
+  kind: 'photo' | 'video'
+  name: string
+  path: string
+  thumb_path: string | null
+  created_by: string | null
+  event_media_players: { player_id: string }[]
+  events?: { name: string; starts_on: string } | null
+}
+
+const MEDIA_COLUMNS = 'id, event_id, kind, name, path, thumb_path, created_by, event_media_players(player_id)'
+
+export const loadEvents = async (): Promise<EventRow[]> => {
+  const { data } = await supabase!
+    .from('events')
+    .select('id, name, kind, starts_on, ends_on, sub_brand, opponent, location, created_by, event_media(kind)')
+    .order('starts_on', { ascending: false })
+    .order('created_at', { ascending: false })
+  return (data ?? []) as EventRow[]
+}
+
+export const loadEventMedia = async (eventId: string): Promise<EventMedia[]> => {
+  const { data } = await supabase!.from('event_media').select(MEDIA_COLUMNS).eq('event_id', eventId).order('created_at')
+  return (data ?? []) as EventMedia[]
+}
+
+/** Every event photo or video a player is tagged in, newest event first. */
+export const loadPlayerMedia = async (playerId: string): Promise<EventMedia[]> => {
+  const { data } = await supabase!
+    .from('event_media')
+    .select(`${MEDIA_COLUMNS}, events(name, starts_on), tagged:event_media_players!inner(player_id)`)
+    .eq('tagged.player_id', playerId)
+    .order('created_at', { ascending: false })
+  return ((data ?? []) as unknown as EventMedia[]).sort((a, b) => (b.events?.starts_on ?? '').localeCompare(a.events?.starts_on ?? ''))
+}
+
+/** Preview to show in grids: the small server-made JPEG for photos, the file itself for videos. */
+export const previewPath = (m: EventMedia) => m.thumb_path ?? m.path

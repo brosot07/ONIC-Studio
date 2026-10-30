@@ -3,7 +3,7 @@
 // must not contain code, …), re-encoded when it's an image, and only then moved into the library.
 import { z } from 'npm:zod@4.6.7'
 import { HttpError, handle, json } from '../_shared/http.ts'
-import { rateLimit, requireAdmin, serverClient } from '../_shared/supabase.ts'
+import { rateLimit, requireAdmin, requireCaller, serverClient } from '../_shared/supabase.ts'
 import { checkFont, checkPdf, MIME, processRaster, Rejected, sniff, sniffVideo, type FileType } from './checks.ts'
 import { cleanSvg } from './svg.ts'
 
@@ -39,6 +39,12 @@ const Body = z.discriminatedUnion('library', [
     name,
     replaces: uuid.optional(),
   }),
+  z.object({
+    library: z.literal('events'),
+    staging_path: z.string().max(300),
+    event_id: uuid,
+    name,
+  }),
 ])
 type Body = z.infer<typeof Body>
 
@@ -61,6 +67,14 @@ const RULES: Record<string, { types: FileType[]; minShortSide?: number; transpar
   'sponsors:guideline': { types: ['pdf'] },
 }
 
+/** Event files: Admins with two-step sign-in, or Social designers. Roles come from the database, never the browser. */
+const requireEventUploader = async (req: Request, db: ReturnType<typeof serverClient>) => {
+  const caller = await requireCaller(req, db)
+  if (caller.roles.includes('admin') && caller.aal === 'aal2') return caller
+  if (caller.roles.includes('social_designer') && (caller.aal === 'aal2' || !caller.roles.some((r) => r === 'admin' || r === 'approver'))) return caller
+  throw new HttpError(403, 'not_allowed', 'Only Admins and Social designers can add event photos.')
+}
+
 const MAX_FILE = 50 * 1024 * 1024
 const MAX_VIDEO = 500 * 1024 * 1024
 
@@ -69,18 +83,14 @@ const LABEL: Record<FileType, string> = {
   mp4: 'MP4', mov: 'MOV',
 }
 
-/**
- * Videos are checked by their first bytes and size, then streamed from staging into the players library
- * without loading the whole file into memory.
- */
-const storeVideo = async (db: ReturnType<typeof serverClient>, stagingPath: string, pathNoExt: string) => {
+/** Reads only the first 4 KB of a staged file (even if storage ignores the range) and its total size. */
+const readHead = async (db: ReturnType<typeof serverClient>, stagingPath: string) => {
   const { data: signed, error: signErr } = await db.storage.from('staging').createSignedUrl(stagingPath, 300)
   if (signErr || !signed) throw new Rejected('missing')
   const head = await fetch(signed.signedUrl, { headers: { Range: 'bytes=0-4095' } })
-  if (!head.ok) throw new Rejected('missing')
+  if (!head.ok || !head.body) throw new Rejected('missing')
   const total = Number(head.headers.get('content-range')?.split('/')[1] ?? head.headers.get('content-length') ?? 0)
-  // Read at most the first 4 KB, even if storage ignored the range and sent the whole file.
-  const reader = head.body!.getReader()
+  const reader = head.body.getReader()
   const first = new Uint8Array(4096)
   let got = 0
   while (got < first.length) {
@@ -91,28 +101,86 @@ const storeVideo = async (db: ReturnType<typeof serverClient>, stagingPath: stri
     got += take.length
   }
   await reader.cancel()
-  const type = sniffVideo(first.subarray(0, got))
-  if (!type) throw new Rejected('wrong_type', { allowed: 'MP4, MOV' })
-  if (!total) throw new Rejected('unreadable')
-  if (total > MAX_VIDEO) throw new Rejected('too_large', { max: '500 MB' })
+  return { url: signed.signedUrl, first: first.subarray(0, got), total }
+}
 
-  const full = await fetch(signed.signedUrl)
+/**
+ * Videos are checked by their first bytes and size, then streamed from staging into a library bucket
+ * without loading the whole file into memory.
+ */
+const streamVideo = async (
+  db: ReturnType<typeof serverClient>,
+  head: Awaited<ReturnType<typeof readHead>>,
+  type: 'mp4' | 'mov',
+  bucket: 'players' | 'events',
+  pathNoExt: string,
+) => {
+  if (!head.total) throw new Rejected('unreadable')
+  if (head.total > MAX_VIDEO) throw new Rejected('too_large', { max: '500 MB' })
+  const full = await fetch(head.url)
   if (!full.ok || !full.body) throw new Rejected('missing')
   const path = `${pathNoExt}.${type}`
-  const { error } = await db.storage.from('players').upload(path, full.body, { contentType: MIME[type], upsert: false, duplex: 'half' })
+  const { error } = await db.storage.from(bucket).upload(path, full.body, { contentType: MIME[type], upsert: false, duplex: 'half' })
   if (error) throw error
-  return { path, mime: MIME[type], bytes: total }
+  return { path, mime: MIME[type], bytes: head.total }
+}
+
+/** Downloads a staged image (at most 50 MB), then checks and rebuilds it. */
+const rebuildImage = async (db: ReturnType<typeof serverClient>, stagingPath: string, types: FileType[], minShortSide: number, thumb?: number) => {
+  const { data: blob, error: dlErr } = await db.storage.from('staging').download(stagingPath)
+  if (dlErr || !blob) throw new Rejected('missing')
+  if (blob.size > MAX_FILE) throw new Rejected('too_large', { max: '50 MB' })
+  const original = new Uint8Array(await blob.arrayBuffer())
+  if (original.length === 0) throw new Rejected('unreadable')
+  const type = sniff(original)
+  if (!type || !types.includes(type)) throw new Rejected('wrong_type', { allowed: types.map((t) => LABEL[t]).join(', ') })
+  return { type, original, raster: type === 'png' || type === 'jpeg' ? await processRaster(original, type, { minShortSide, thumb }) : null }
+}
+
+/** Event photos and videos: Admins (with two-step sign-in) and Social designers. */
+const addEventFile = async (req: Request, db: ReturnType<typeof serverClient>, body: Extract<Body, { library: 'events' }>, caller: { id: string }) => {
+  const head = await readHead(db, body.staging_path)
+  const video = sniffVideo(head.first)
+  let out: { path: string; mime: string; bytes: number; width: number | null; height: number | null; kind: 'photo' | 'video'; thumb?: string }
+  if (video) {
+    out = { ...(await streamVideo(db, head, video, 'events', `${body.event_id}/${crypto.randomUUID()}`)), width: null, height: null, kind: 'video' }
+  } else {
+    const r = await rebuildImage(db, body.staging_path, ['jpeg', 'png', 'mp4', 'mov'], 600, 480)
+    if (!r.raster) throw new Rejected('wrong_type', { allowed: 'JPG, PNG, MP4, MOV' })
+    const ext = r.raster.type === 'jpeg' ? 'jpg' : 'png'
+    const id = crypto.randomUUID()
+    const path = `${body.event_id}/${id}.${ext}`
+    const thumb = `${body.event_id}/${id}.thumb.jpg`
+    const { error } = await db.storage.from('events').upload(path, r.raster.bytes, { contentType: MIME[r.raster.type], upsert: false })
+    if (error) throw error
+    const { error: thumbErr } = await db.storage.from('events').upload(thumb, r.raster.thumb!, { contentType: 'image/jpeg', upsert: false })
+    if (thumbErr) {
+      await db.storage.from('events').remove([path])
+      throw thumbErr
+    }
+    out = { path, mime: MIME[r.raster.type], bytes: r.raster.bytes.length, width: r.raster.width, height: r.raster.height, kind: 'photo', thumb }
+  }
+  const { data: id, error: regErr } = await db.rpc('event_add_media', {
+    p_actor: caller.id,
+    p_row: { event_id: body.event_id, kind: out.kind, name: body.name, path: out.path, thumb_path: out.thumb ?? null, mime: out.mime, bytes: out.bytes, width: out.width, height: out.height },
+  })
+  if (regErr) {
+    await db.storage.from('events').remove(out.thumb ? [out.path, out.thumb] : [out.path])
+    throw regErr
+  }
+  return json(req, 200, { ok: true, id, path: out.path })
 }
 
 Deno.serve(
   handle(async (req) => {
     const db = serverClient()
-    const caller = await requireAdmin(req, db)
-    await rateLimit(db, caller.id, 'library-upload', 60, 60)
-
     const parsed = Body.safeParse(await req.json().catch(() => null))
+    // Event files may come from Social designers too; every other library is Admin-only.
+    const caller = parsed.success && parsed.data.library === 'events' ? await requireEventUploader(req, db) : await requireAdmin(req, db)
     if (!parsed.success) throw new HttpError(400, 'invalid', 'Some details are missing or not valid.')
     const body: Body = parsed.data
+    // Bulk uploads from a match day can be a few hundred files.
+    await rateLimit(db, caller.id, body.library === 'events' ? 'event-upload' : 'library-upload', body.library === 'events' ? 300 : 60, 60)
 
     // Only the caller's own staging folder, no path tricks.
     const prefix = `${caller.id}/`
@@ -122,8 +190,16 @@ Deno.serve(
     const removeStaged = () => db.storage.from('staging').remove([body.staging_path])
 
     try {
+      if (body.library === 'events') {
+        const res = await addEventFile(req, db, body, caller)
+        await removeStaged()
+        return res
+      }
       if (body.library === 'players' && body.kind === 'video') {
-        const out = await storeVideo(db, body.staging_path, `${body.player_id}/video/${crypto.randomUUID()}`)
+        const head = await readHead(db, body.staging_path)
+        const video = sniffVideo(head.first)
+        if (!video) throw new Rejected('wrong_type', { allowed: 'MP4, MOV' })
+        const out = await streamVideo(db, head, video, 'players', `${body.player_id}/video/${crypto.randomUUID()}`)
         const { data: id, error: regErr } = await db.rpc('library_add_file', {
           p_actor: caller.id,
           p_library: 'players',

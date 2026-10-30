@@ -168,16 +168,63 @@ export interface RasterResult {
   width: number
   height: number
   hasAlpha: boolean
+  /** A small JPEG preview, when asked for. */
+  thumb?: Uint8Array
 }
 
 /**
  * Decodes and re-encodes a raster image, which strips metadata and anything hidden in the file.
  * `needsTransparency` enforces a real transparent background (player cutouts).
  */
+/** EXIF orientation of a JPEG (1–8; 1 = upright). Phones and cameras store photos sideways and set this flag. */
+export const jpegOrientation = (b: Uint8Array): number => {
+  let i = 2
+  while (i + 4 < b.length && b[i] === 0xff) {
+    const marker = b[i + 1]!
+    const len = (b[i + 2]! << 8) | b[i + 3]!
+    if (marker === 0xda || len < 2) break
+    if (marker === 0xe1 && ascii(b, i + 4, 6) === 'Exif\0\0') {
+      const t = i + 10
+      const le = ascii(b, t, 2) === 'II'
+      const u16 = (o: number) => (le ? b[o]! | (b[o + 1]! << 8) : (b[o]! << 8) | b[o + 1]!)
+      const u32 = (o: number) => (le ? (u16(o) | (u16(o + 2) << 16)) >>> 0 : ((u16(o) << 16) | u16(o + 2)) >>> 0)
+      const ifd = t + u32(t + 4)
+      if (ifd + 2 > b.length) return 1
+      const count = u16(ifd)
+      for (let e = 0; e < count && ifd + 2 + e * 12 + 12 <= b.length; e++) {
+        const at = ifd + 2 + e * 12
+        if (u16(at) === 0x0112) {
+          const v = u16(at + 8)
+          return v >= 1 && v <= 8 ? v : 1
+        }
+      }
+      return 1
+    }
+    i += 2 + len
+  }
+  return 1
+}
+
+/** Turns the pixels upright, because re-encoding drops the orientation flag. */
+const upright = (img: Image, orientation: number): Image => {
+  // imagescript rotates counter-clockwise; rotate() is typed loosely (Image | Frame) but returns the same Image.
+  const rot = (deg: number) => img.rotate(deg) as Image
+  switch (orientation) {
+    case 2: return img.flip('horizontal')
+    case 3: return rot(180)
+    case 4: return img.flip('vertical')
+    case 5: return rot(270).flip('horizontal')
+    case 6: return rot(270)
+    case 7: return rot(90).flip('horizontal')
+    case 8: return rot(90)
+    default: return img
+  }
+}
+
 export const processRaster = async (
   b: Uint8Array,
   type: FileType,
-  opts: { minShortSide: number; needsTransparency?: boolean; maxBytes?: number },
+  opts: { minShortSide: number; needsTransparency?: boolean; maxBytes?: number; thumb?: number },
 ): Promise<RasterResult> => {
   if (b.length > (opts.maxBytes ?? 30 * 1024 * 1024)) throw new Rejected('too_large', { max: '30 MB' })
   if (type !== 'png' && type !== 'jpeg') throw new Rejected('wrong_type', { allowed: 'PNG, JPG' })
@@ -194,6 +241,7 @@ export const processRaster = async (
   } catch {
     throw new Rejected('unreadable')
   }
+  if (type === 'jpeg') img = upright(img, jpegOrientation(b))
   const { width, height } = img
   if (width * height > 50_000_000 || width > 10000 || height > 10000) throw new Rejected('too_big_pixels', { max: '10000 px' })
   if (Math.min(width, height) < opts.minShortSide) {
@@ -218,5 +266,10 @@ export const processRaster = async (
   if (opts.needsTransparency && !hasAlpha) throw new Rejected('no_transparency')
 
   const out = hasAlpha || type === 'png' ? await img.encode(1) : await img.encodeJPEG(92)
-  return { bytes: out, type: hasAlpha || type === 'png' ? 'png' : 'jpeg', width, height, hasAlpha }
+  let thumb: Uint8Array | undefined
+  if (opts.thumb) {
+    const small = width >= height ? img.resize(Math.min(opts.thumb, width), Image.RESIZE_AUTO) : img.resize(Image.RESIZE_AUTO, Math.min(opts.thumb, height))
+    thumb = await (small as Image).encodeJPEG(78)
+  }
+  return { bytes: out, type: hasAlpha || type === 'png' ? 'png' : 'jpeg', width, height, hasAlpha, thumb }
 }

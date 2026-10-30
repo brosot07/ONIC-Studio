@@ -1,6 +1,6 @@
 import { assertEquals, assertRejects, assertThrows } from 'jsr:@std/assert@1.0.13'
 import { Image } from 'jsr:@matmen/imagescript@1.3.1'
-import { checkFont, checkPdf, processRaster, Rejected, sniff, sniffVideo } from './checks.ts'
+import { checkFont, checkPdf, jpegOrientation, processRaster, Rejected, sniff, sniffVideo } from './checks.ts'
 import { cleanSvg } from './svg.ts'
 
 const enc = (s: string) => new TextEncoder().encode(s)
@@ -156,4 +156,23 @@ Deno.test('videos are recognised by their ftyp box, not their name', () => {
   assertEquals(sniffVideo(box('isom', 4)), null) // impossible box size
   assertEquals(sniffVideo(new TextEncoder().encode('<html><body>ftypisom</body></html>')), null)
   assertEquals(sniffVideo(new Uint8Array(8)), null)
+})
+
+Deno.test('sideways phone photos are stored upright', async () => {
+  const wide = new Image(40, 20).fill(0xffffffff)
+  wide.setPixelAt(1, 1, 0xff0000ff)
+  const jpeg = await wide.encodeJPEG(95)
+  // Insert an EXIF block saying "rotate 90° clockwise to view" (orientation 6), little-endian.
+  const tiff = [0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00, 0x01, 0x00, 0x12, 0x01, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+  const payload = [...new TextEncoder().encode('Exif\0\0'), ...tiff]
+  const app1 = [0xff, 0xe1, (payload.length + 2) >> 8, (payload.length + 2) & 0xff, ...payload]
+  const withExif = new Uint8Array([...jpeg.subarray(0, 2), ...app1, ...jpeg.subarray(2)])
+  assertEquals(jpegOrientation(withExif), 6)
+  assertEquals(jpegOrientation(jpeg), 1)
+  const r = await processRaster(withExif, 'jpeg', { minShortSide: 10 })
+  assertEquals([r.width, r.height], [20, 40])
+  const out = await Image.decode(r.bytes)
+  // The red corner (top-left of the sideways original) ends up top-right once turned clockwise.
+  const [red, , blue] = Image.colorToRGBA(out.getPixelAt(20, 1))
+  assertEquals(red > 200 && blue < 80, true)
 })

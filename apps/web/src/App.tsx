@@ -13,6 +13,7 @@ import { Shell, type Page } from './screens/Shell'
 import { Home } from './screens/Home'
 import { Users } from './screens/admin/Users'
 import { Brand } from './screens/library/Brand'
+import { Events } from './screens/library/Events'
 import { Players } from './screens/library/Players'
 import { Sponsors } from './screens/library/Sponsors'
 
@@ -118,6 +119,8 @@ export const App = () => {
         <Brand isAdmin={isAdmin} />
       ) : page === 'players' ? (
         <Players isAdmin={isAdmin} />
+      ) : page === 'events' ? (
+        <Events isAdmin={isAdmin} canAdd={isAdmin || access.roles.includes('social_designer')} userId={access.userId} />
       ) : page === 'sponsors' ? (
         <Sponsors isAdmin={isAdmin} />
       ) : (

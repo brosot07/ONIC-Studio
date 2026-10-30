@@ -5,6 +5,7 @@ export type UploadTarget =
   | { library: 'brand'; kind: string; brand?: string; variant?: string | null; name: string; replaces?: string }
   | { library: 'players'; player_id: string; kind: string; name: string; replaces?: string }
   | { library: 'sponsors'; sponsor_id: string; kind: string; name: string; replaces?: string }
+  | { library: 'events'; event_id: string; name: string }
 
 export interface UploadOutcome {
   ok: boolean
@@ -35,7 +36,7 @@ export const displayName = (file: File) => file.name.replace(/\.[^.]+$/, '').sli
  */
 export const uploadToLibrary = async (file: File, target: UploadTarget): Promise<UploadOutcome> => {
   if (!supabase) return { ok: false, message: 'common.error.generic' }
-  const video = target.library === 'players' && target.kind === 'video'
+  const video = /\.(mp4|mov)$/i.test(file.name) && (target.library === 'events' || (target.library === 'players' && target.kind === 'video'))
   if (file.size > (video ? 500 : 50) * 1024 * 1024) return { ok: false, message: 'upload.error.too_large', detail: { max: video ? '500 MB' : '50 MB' } }
   const { data: user } = await supabase.auth.getUser()
   if (!user.user) return { ok: false, message: 'common.error.generic' }
@@ -63,7 +64,7 @@ export const uploadToLibrary = async (file: File, target: UploadTarget): Promise
 }
 
 /** Short-lived links (10 minutes) to show private library files. */
-export const signedUrls = async (bucket: 'brand' | 'players' | 'sponsors', paths: string[]): Promise<Record<string, string>> => {
+export const signedUrls = async (bucket: 'brand' | 'players' | 'sponsors' | 'events', paths: string[]): Promise<Record<string, string>> => {
   if (!supabase || paths.length === 0) return {}
   // PDFs are signed as downloads, so they never open as a page on the storage site.
   const pdfs = paths.filter((p) => p.endsWith('.pdf'))
