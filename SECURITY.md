@@ -110,3 +110,5 @@ cover the same ground in CI.
 | 1 | Supabase's "sign out everywhere" API needs the user's own token | `revoke_user_sessions()` (server-only) deletes the user's sessions; access tokens expire within 5 minutes |
 | 1 | Approver could approve own job; designer could set a budget; last-Admin race; audit actor missing; session-revoke errors ignored; idle sign-out was global and per-tab; email token in query string; deploy secrets visible to every step; SITE_URL unchecked | Fixed (independent review) — covered by new database checks and browser journeys |
 | 1 | Production web address missing from the Edge Function origin allowlist | **Pending** Vercel address |
+| 1 | Hosted advisor 0029: `my_access` and `transition_job` were SECURITY DEFINER in the exposed schema | Privileged bodies moved to `private`; `public` keeps SECURITY INVOKER wrappers with the same names |
+| 1 | The deploy token (`SUPABASE_ACCESS_TOKEN`) has full access to the ONIC Studio project, broader than the deploy needs | Accepted by the Admin for now; it lives only in the protected `production` environment. Narrow it at the next 90-day rotation |
