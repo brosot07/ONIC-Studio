@@ -34,6 +34,22 @@ chat or log.
 - Tests: `supabase/tests/database/*.test.sql` (48 checks across every role) and `tests/e2e-local` (sign-in
   journeys in a real browser). Supabase advisors must report no issues.
 
+## Asset libraries (Phase 2)
+
+- Brand, Players and Sponsors: Admins (with `aal2`) edit, everyone else reads. Designers never see players who are
+  inactive, haven't consented or whose image rights expired, nor sponsors whose contract isn't running; the
+  matching files can't be opened either (storage policies follow the same rows). QC will block them too.
+- Files live in private buckets. Browsers only get 10-minute signed links. Admins upload into their own folder of a
+  private `staging` bucket; nothing reaches a library except through `library-upload`.
+- `library-upload` identifies files by their bytes (never the name or browser-supplied type), enforces size limits,
+  decodes and re-encodes PNG/JPG (stripping metadata and anything appended), requires real transparency for player
+  cutouts (also enforced by a database check), refuses SVGs with scripts, event handlers, entities, `foreignObject`
+  or outside links, refuses PDFs with JavaScript, launch actions or attachments, and checks font table directories.
+  SVGs are only ever displayed through `<img>`, where scripts can't run even if one slipped through.
+- Library rows can't be repointed at another file; every change is in the audit log with the acting Admin.
+- The image decoder (`jsr:@matmen/imagescript@1.3.1`, by its author) is pinned; it loads its WebAssembly codec from
+  jsr.io at that pinned version.
+
 ## Server functions
 
 `admin-users` (invite, change team/role, turn account off/on, sign out everywhere, password link): verifies the
@@ -112,3 +128,5 @@ cover the same ground in CI.
 | 1 | Production web address missing from the Edge Function origin allowlist | **Pending** Vercel address |
 | 1 | Hosted advisor 0029: `my_access` and `transition_job` were SECURITY DEFINER in the exposed schema | Privileged bodies moved to `private`; `public` keeps SECURITY INVOKER wrappers with the same names |
 | 1 | The deploy token (`SUPABASE_ACCESS_TOKEN`) has full access to the ONIC Studio project, broader than the deploy needs | Accepted by the Admin for now; it lives only in the protected `production` environment. Narrow it at the next 90-day rotation |
+| 2 | Storage policies compared the asset's display name instead of the file path, so no one could open player files | Fixed before release (caught by the new library tests) |
+| 2 | Newest imagescript releases (3.x) were published days ago | Pinned to 1.3.1 (2025) until newer versions have settled |

@@ -3,6 +3,9 @@ begin;
 create extension if not exists pgtap with schema extensions;
 select plan(54);
 
+-- Start from a clean set of people (other local data may exist); everything rolls back at the end.
+delete from public.user_roles;
+
 -- People ---------------------------------------------------------------------
 insert into auth.users (id, email, aud, role) values
   ('a0000000-0000-4000-8000-00000000000a', 'admin@onic.test', 'authenticated', 'authenticated'),
