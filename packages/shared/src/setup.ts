@@ -38,15 +38,14 @@ export const BRAND_SLOTS: readonly BrandSlot[] = [
   { id: 'guideline', kind: 'guideline', multiple: false, accept: '.pdf', required: true },
 ]
 
-export const SUB_BRANDS: readonly string[] = ['ONIC ID', 'ONIC PH', 'ONIC Padel']
-
-export const PLAYER_ASSET_KINDS = ['cutout', 'headshot', 'action'] as const
+export const PLAYER_ASSET_KINDS = ['cutout', 'headshot', 'action', 'video'] as const
 export const SPONSOR_ASSET_KINDS = ['logo_light', 'logo_dark', 'logo_mono', 'guideline'] as const
 
 export const PLAYER_ACCEPT: Record<(typeof PLAYER_ASSET_KINDS)[number], string> = {
   cutout: '.png',
   headshot: '.jpg,.jpeg,.png',
   action: '.jpg,.jpeg,.png',
+  video: '.mp4,.mov',
 }
 export const SPONSOR_ACCEPT: Record<(typeof SPONSOR_ASSET_KINDS)[number], string> = {
   logo_light: '.svg,.png',

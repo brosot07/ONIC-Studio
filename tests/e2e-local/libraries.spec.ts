@@ -14,6 +14,24 @@ const resetLibraries = async () => {
   for (const t of ['player_assets', 'players', 'sponsor_assets', 'sponsors', 'brand_assets', 'brand_colors', 'voice_guides']) {
     await db.from(t).delete().not('id', 'is', null)
   }
+  await db.from('sub_brands').delete().not('name', 'in', '("ONIC ID","ONIC PH","ONIC Padel")')
+}
+
+/** Brand, Players and Sponsors sit in the Library menu. */
+const openLibrary = async (page: Page, name: 'Brand' | 'Players' | 'Sponsors') => {
+  const menu = page.getByRole('button', { name: 'Library' })
+  if ((await menu.getAttribute('aria-expanded')) !== 'true') await menu.click()
+  await page.getByRole('button', { name, exact: true }).click()
+}
+
+/** The first bytes of an MP4 file: an ftyp box, then some media data. */
+const tinyMp4 = () => {
+  const b = Buffer.alloc(4096)
+  b.writeUInt32BE(24, 0)
+  b.write('ftypisom', 4, 'ascii')
+  b.writeUInt32BE(4072, 24)
+  b.write('mdat', 28, 'ascii')
+  return b
 }
 
 const signInAs = async (page: Page, email: string, secret?: string) => {
@@ -71,7 +89,7 @@ test('an SVG with a document-type header is refused with instructions', async ({
 
 test('a non-transparent player cutout is refused with a clear message; a transparent one is accepted', async ({ page }) => {
   await signInAs(page, 'boss@onic.test', adminSecret)
-  await page.getByRole('button', { name: 'Players', exact: true }).click()
+  await openLibrary(page, 'Players')
   await page.getByRole('button', { name: 'Add a player' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('Full name').fill('Kairi Rayosdelsol')
@@ -91,9 +109,47 @@ test('a non-transparent player cutout is refused with a clear message; a transpa
   await page.screenshot({ path: 'test-results/local/players.png', fullPage: true })
 })
 
+test('an Admin adds a new sub-brand and files its logo under it', async ({ page }) => {
+  await signInAs(page, 'boss@onic.test', adminSecret)
+  const slot = page.locator('.slot', { hasText: 'Sub-brand logos' })
+  await slot.getByLabel('Which sub-brand?').selectOption({ label: '+ Add a new sub-brand…' })
+  await slot.getByLabel('New sub-brand name').fill('onic ph')
+  await slot.getByRole('button', { name: 'Add', exact: true }).click()
+  await expect(slot.getByRole('alert')).toContainText('already on the list')
+  await slot.getByLabel('New sub-brand name').fill('ONIC MY')
+  await slot.getByRole('button', { name: 'Add', exact: true }).click()
+  await expect(slot.getByLabel('Which sub-brand?')).toHaveValue('ONIC MY')
+  await slot.locator('input[type=file]').setInputFiles({ name: 'onic-my.svg', mimeType: 'image/svg+xml', buffer: LOGO_SVG })
+  await expect(slot.getByText('onic-my.svg added')).toBeVisible()
+  await expect(slot.locator('.tile-name')).toContainText('ONIC MY')
+  await page.screenshot({ path: 'test-results/local/sub-brand.png', fullPage: true })
+})
+
+test('player videos: an MP4 is kept with the player, a file that only looks like one is refused', async ({ page }) => {
+  await signInAs(page, 'boss@onic.test', adminSecret)
+  await openLibrary(page, 'Players')
+  await page.getByRole('button', { name: 'Add a player' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Full name').fill('Sanford Vinuya')
+  await dialog.getByLabel('IGN').fill('SANZ')
+  await dialog.getByLabel('The player agreed to appear in ONIC content').check()
+  await dialog.getByRole('button', { name: 'Save' }).click()
+
+  const row = page.locator('.entity', { hasText: 'SANZ' })
+  const videos = row.locator('.entity-drops > div', { hasText: 'Videos (MP4 or MOV)' }).locator('input[type=file]')
+  await videos.setInputFiles({ name: 'fake.mp4', mimeType: 'video/mp4', buffer: Buffer.from('<html>not a video</html>') })
+  await expect(row.locator('.is-refused')).toContainText('fake.mp4')
+  await videos.setInputFiles({ name: 'sanz-intro.mp4', mimeType: 'video/mp4', buffer: tinyMp4() })
+  await expect(row.getByText('sanz-intro.mp4 added')).toBeVisible()
+  await expect(row.locator('.tile video')).toHaveCount(1)
+  const { data } = await serverClient().from('player_assets').select('kind, mime, bytes').eq('kind', 'video')
+  expect(data).toEqual([{ kind: 'video', mime: 'video/mp4', bytes: 4096 }])
+  await page.screenshot({ path: 'test-results/local/player-video.png' })
+})
+
 test('players are imported from a spreadsheet', async ({ page }) => {
   await signInAs(page, 'boss@onic.test', adminSecret)
-  await page.getByRole('button', { name: 'Players', exact: true }).click()
+  await openLibrary(page, 'Players')
   const csv = 'name,ign,role_lane,team_name,status,rights_expires_on,consent,notes\nA One,ALPHA,Mid,ONIC ID,active,2030-01-01,yes,\nB Two,BETA,Gold,ONIC ID,loaned,,no,\nBad Row,,,,,,,\n'
   await page.locator('.csv input[type=file]').setInputFiles({ name: 'players.csv', mimeType: 'text/csv', buffer: Buffer.from(csv) })
   await expect(page.getByRole('status')).toHaveText('2 rows imported.')
@@ -113,12 +169,12 @@ test('designers see libraries read-only, and never players with expired rights',
   ])
   await signInAs(page, 'sari@onic.test')
   await expect(page.getByRole('heading', { name: 'Set up ONIC Studio' })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Players', exact: true }).click()
+  await openLibrary(page, 'Players')
   await expect(page.getByText('SHOWN')).toBeVisible()
   await expect(page.getByText('HIDDEN')).toHaveCount(0)
   await expect(page.getByText('Only Admins can change the libraries.')).toBeVisible()
   await expect(page.locator('input[type=file]')).toHaveCount(0)
-  await page.getByRole('button', { name: 'Sponsors', exact: true }).click()
+  await openLibrary(page, 'Sponsors')
   await expect(page.getByText('Running Co')).toBeVisible()
   await expect(page.getByText('Ended Co')).toHaveCount(0)
 })

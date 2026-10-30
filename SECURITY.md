@@ -53,6 +53,12 @@ chat or log.
     JavaScript, launch, attachments, rich media, form submission, remote documents or XFA. PDFs are offered as
     downloads, never opened as a page on the storage site.
   - Fonts: table directory checks only (fonts are stored, not rendered by the browser, until Phase 4).
+  - Player videos (MP4/MOV, up to 500 MB): too large to rebuild on the server, so only the first 4 KB are read and
+    must be an ISO media `ftyp` box with an expected brand; the file is then streamed into the `players` bucket
+    with a fixed `video/mp4` or `video/quicktime` type and only ever played through `<video>` (CSP `media-src` is
+    the project's storage host only). Accepted risk: content after the header isn't validated; only Admins with
+    two-step sign-in can upload.
+- Sub-brands are a table: everyone reads, only an Admin with `aal2` adds, renames or removes (pgTAP-tested).
 - Library rows can't be repointed at another file; a new version can only replace a file of the same owner and kind,
   versions are unique per lineage, and replacements are serialised. Every change is in the audit log.
 - Older versions stay readable to the people who can see the current one (version history). A signed link made just

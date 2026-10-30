@@ -364,6 +364,40 @@ fieldset.field legend {
   background: var(--line);
 }
 
+.nav-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.nav-caret {
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 160ms ease-out;
+}
+
+.nav-group[aria-expanded='true'] .nav-caret {
+  transform: rotate(45deg);
+}
+
+.nav-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: 12px;
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-caret {
+    transition: none;
+  }
+}
+
 .nav-item[aria-current='page'] {
   background: var(--onic-yellow);
   color: var(--onic-yellow-ink);
@@ -824,7 +858,8 @@ fieldset.field legend {
   overflow: hidden;
 }
 
-.tile-preview img {
+.tile-preview img,
+.tile-preview video {
   width: 100%;
   height: 100%;
   object-fit: contain;

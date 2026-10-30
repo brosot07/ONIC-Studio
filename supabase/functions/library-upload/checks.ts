@@ -2,7 +2,7 @@
 // file name or the browser's content type — only the bytes.
 import { decode, Image } from 'jsr:@matmen/imagescript@1.3.1'
 
-export type FileType = 'png' | 'jpeg' | 'webp' | 'svg' | 'pdf' | 'otf' | 'ttf' | 'woff' | 'woff2'
+export type FileType = 'png' | 'jpeg' | 'webp' | 'svg' | 'pdf' | 'otf' | 'ttf' | 'woff' | 'woff2' | 'mp4' | 'mov'
 
 export const MIME: Record<FileType, string> = {
   png: 'image/png',
@@ -14,6 +14,8 @@ export const MIME: Record<FileType, string> = {
   ttf: 'font/ttf',
   woff: 'font/woff',
   woff2: 'font/woff2',
+  mp4: 'video/mp4',
+  mov: 'video/quicktime',
 }
 
 /** A check failed. `code` maps to a plain-language message in the app; `detail` fills it in. */
@@ -40,6 +42,22 @@ export const sniff = (b: Uint8Array): FileType | null => {
   // XML-ish text whose first element is <svg> (possibly after a declaration, comments or a DOCTYPE block).
   if (head.startsWith('<') && /<svg[\s>]/i.test(head) && !/<(html|body|head)[\s>]/i.test(head)) return 'svg'
   return null
+}
+
+/** MP4 brands phones, cameras and editing apps write in the `ftyp` box. */
+const MP4_BRANDS = new Set(['isom', 'iso2', 'iso4', 'iso5', 'iso6', 'mp41', 'mp42', 'avc1', 'M4V ', 'M4VP', 'dash', 'msnv', 'XAVC', 'MSNV', '3gp4', '3gp5'])
+
+/**
+ * Identifies a video from its first bytes: an ISO media file whose first box is `ftyp`, with a brand we expect.
+ * Videos are too big to rebuild on the server, so this is the whole check; they are only ever played back.
+ */
+export const sniffVideo = (b: Uint8Array): 'mp4' | 'mov' | null => {
+  if (b.length < 16 || ascii(b, 4, 4) !== 'ftyp') return null
+  const boxSize = ((b[0]! << 24) | (b[1]! << 16) | (b[2]! << 8) | b[3]!) >>> 0
+  if (boxSize < 16 || boxSize > 4096) return null
+  const brand = ascii(b, 8, 4)
+  if (brand === 'qt  ') return 'mov'
+  return MP4_BRANDS.has(brand) ? 'mp4' : null
 }
 
 /** Dangerous PDF actions: scripts, launching programs, attachments, forms that send data, remote documents. */

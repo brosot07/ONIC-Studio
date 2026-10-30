@@ -35,7 +35,8 @@ export const displayName = (file: File) => file.name.replace(/\.[^.]+$/, '').sli
  */
 export const uploadToLibrary = async (file: File, target: UploadTarget): Promise<UploadOutcome> => {
   if (!supabase) return { ok: false, message: 'common.error.generic' }
-  if (file.size > 50 * 1024 * 1024) return { ok: false, message: 'upload.error.too_large', detail: { max: '50 MB' } }
+  const video = target.library === 'players' && target.kind === 'video'
+  if (file.size > (video ? 500 : 50) * 1024 * 1024) return { ok: false, message: 'upload.error.too_large', detail: { max: video ? '500 MB' : '50 MB' } }
   const { data: user } = await supabase.auth.getUser()
   if (!user.user) return { ok: false, message: 'common.error.generic' }
 

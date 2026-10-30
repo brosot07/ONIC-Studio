@@ -1,10 +1,16 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { MessageKey } from '@onic/shared'
 import type { Access } from '../lib/access'
 import { usePrefs } from '../lib/prefs'
 import { PrefsBar } from '../ui/PrefsBar'
 
 export type Page = 'home' | 'brand' | 'players' | 'sponsors' | 'admin-users'
+
+const LIBRARY: { id: Page; label: MessageKey }[] = [
+  { id: 'brand', label: 'shell.brand' },
+  { id: 'players', label: 'shell.players' },
+  { id: 'sponsors', label: 'shell.sponsors' },
+]
 
 export const Shell = ({
   access,
@@ -22,26 +28,36 @@ export const Shell = ({
   const { t } = usePrefs()
   const isAdmin = access.roles.includes('admin')
   const teamLabel: MessageKey = access.team ? `shell.team.${access.team}` : 'shell.team.all'
-  const nav: { id: Page; label: MessageKey; show: boolean }[] = [
-    { id: 'home', label: 'shell.home', show: true },
-    { id: 'brand', label: 'shell.brand', show: true },
-    { id: 'players', label: 'shell.players', show: true },
-    { id: 'sponsors', label: 'shell.sponsors', show: true },
-    { id: 'admin-users', label: 'shell.admin.users', show: isAdmin },
-  ]
+  const inLibrary = LIBRARY.some((l) => l.id === page)
+  const [libraryOpen, setLibraryOpen] = useState(inLibrary)
+  const item = (id: Page, label: MessageKey, extra = '') => (
+    <button key={id} type="button" className={`nav-item${extra}`} aria-current={page === id ? 'page' : undefined} onClick={() => onNavigate(id)}>
+      {t(label)}
+    </button>
+  )
 
   return (
     <div className="shell">
       <aside className="sidebar">
         <p className="sidebar-mark">ONIC Studio</p>
         <nav aria-label="ONIC Studio">
-          {nav
-            .filter((n) => n.show)
-            .map((n) => (
-              <button key={n.id} type="button" className="nav-item" aria-current={page === n.id ? 'page' : undefined} onClick={() => onNavigate(n.id)}>
-                {t(n.label)}
-              </button>
-            ))}
+          {item('home', 'shell.home')}
+          <button
+            type="button"
+            className="nav-item nav-group"
+            aria-expanded={libraryOpen || inLibrary}
+            aria-controls="nav-library"
+            onClick={() => setLibraryOpen(!(libraryOpen || inLibrary))}
+          >
+            {t('shell.library')}
+            <span className="nav-caret" aria-hidden="true" />
+          </button>
+          {(libraryOpen || inLibrary) && (
+            <div id="nav-library" className="nav-sub">
+              {LIBRARY.map((l) => item(l.id, l.label, ' nav-subitem'))}
+            </div>
+          )}
+          {isAdmin && item('admin-users', 'shell.admin.users')}
         </nav>
         <div className="sidebar-foot">
           <p className="me">

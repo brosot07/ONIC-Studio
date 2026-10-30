@@ -9,8 +9,9 @@ export interface Tile {
 }
 
 const isImage = (t: Tile) => /\.(png|jpe?g|svg|webp)$/i.test(t.path)
+const isVideo = (t: Tile) => /\.(mp4|mov)$/i.test(t.path)
 
-/** Previews of library files. Images show a thumbnail; PDFs and fonts show their name with an Open link. */
+/** Previews of library files. Images show a thumbnail, videos play in place; PDFs and fonts show their name with an Open link. */
 export const FileTiles = ({
   tiles,
   urls,
@@ -29,6 +30,8 @@ export const FileTiles = ({
           <div className="tile-preview">
             {isImage(tile) && urls[tile.path] ? (
               <img src={urls[tile.path]} alt="" loading="lazy" />
+            ) : isVideo(tile) && urls[tile.path] ? (
+              <video src={urls[tile.path]} controls muted playsInline preload="metadata" />
             ) : (
               <span className="tile-ext">{tile.path.split('.').pop()?.toUpperCase()}</span>
             )}
@@ -38,7 +41,7 @@ export const FileTiles = ({
             {tile.name}
           </span>
           <span className="tile-actions">
-            {urls[tile.path] && !isImage(tile) && (
+            {urls[tile.path] && !isImage(tile) && !isVideo(tile) && (
               <a href={urls[tile.path]} target="_blank" rel="noopener noreferrer">
                 {t('library.open')}
               </a>
