@@ -55,8 +55,8 @@ select throws_ok($$insert into public.brand_assets (kind, name, path, mime, byte
   '42501', null, 'designers cannot add brand files');
 update public.players set name = 'hacked' where id = '11000000-0000-4000-8000-000000000001';
 delete from public.brand_assets;
-select throws_ok($$insert into storage.objects (bucket_id, name) values ('staging', (select auth.uid())::text || '/x.png')$$,
-  '42501', null, 'designers cannot upload files');
+select throws_ok($$insert into storage.objects (bucket_id, name) values ('players', 'p/direct.png')$$,
+  '42501', null, 'designers cannot put files into a library');
 reset role;
 select is((select name from public.players where id = '11000000-0000-4000-8000-000000000001'), 'Usable',
   'a designer''s edit to a player changed nothing');

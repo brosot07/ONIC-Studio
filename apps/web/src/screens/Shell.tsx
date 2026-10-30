@@ -4,11 +4,12 @@ import type { Access } from '../lib/access'
 import { usePrefs } from '../lib/prefs'
 import { PrefsBar } from '../ui/PrefsBar'
 
-export type Page = 'home' | 'brand' | 'players' | 'sponsors' | 'admin-users'
+export type Page = 'home' | 'brand' | 'players' | 'events' | 'sponsors' | 'admin-users'
 
 const LIBRARY: { id: Page; label: MessageKey }[] = [
   { id: 'brand', label: 'shell.brand' },
   { id: 'players', label: 'shell.players' },
+  { id: 'events', label: 'shell.events' },
   { id: 'sponsors', label: 'shell.sponsors' },
 ]
 
