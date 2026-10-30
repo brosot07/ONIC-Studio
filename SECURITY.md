@@ -22,10 +22,13 @@ chat or log.
 - A **restrictive** policy on every table requires an active account and, for Admin/Approver, a two-step (`aal2`)
   session. Admin and Approver see nothing at all until they enter their code.
 - Designers see only their own team's jobs and teammates. Admin and Approver see both teams.
+- Nobody approves or finalises their own job, and a designer can't also be an Admin or Approver.
+- Designers can't set or raise a job's credit budget, its owner or its timestamps; the server does.
 - Jobs change state only through `transition_job()`. QC results, scheduling and publishing are server-only;
   approving, rejecting (with a required note) and finalising need the Approver role with `aal2`. Direct writes to
   `state`, `team_id` or `created_by` are blocked by column grants and a trigger.
-- `audit_log` and `job_transitions` are append-only, even for the database owner. Logins, role and team changes,
+- `audit_log` and `job_transitions` reject edits and deletes through the API and from ordinary database sessions
+  (a database owner could still disable the trigger; that's what point-in-time backups and the restore drill cover). Logins, role and team changes,
   approvals, invitations, account on/off and "sign out everywhere" are recorded.
 - The first Admin is created once with `private.bootstrap_admin()` from the SQL editor; it refuses to run again.
 - Tests: `supabase/tests/database/*.test.sql` (48 checks across every role) and `tests/e2e-local` (sign-in
@@ -36,7 +39,16 @@ chat or log.
 `admin-users` (invite, change team/role, turn account off/on, sign out everywhere, password link): verifies the
 sign-in token, re-reads roles from the database, requires Admin + `aal2`, validates input with zod, rate-limits to 30
 changes a minute, writes the audit log, and only answers allowlisted web origins. Admins can't turn off or demote
-themselves, and the last Admin can't be removed. Changing someone's roles ends their sessions.
+themselves, and the last Admin can't be removed: every people change runs in one locked database transaction
+(`admin_create_profile`, `admin_update_user`, `admin_set_disabled`), so two Admins acting at once can't race past
+the check. Audit entries name the Admin who acted. Changing someone's roles ends their sessions.
+
+Password reset from an email link can't bypass two-step sign-in: Supabase refuses a password change from a reset
+session (`insufficient_aal`) when the account has an authenticator — checked against the local stack.
+
+Sign-in links in emails carry their one-time code after `#`, so it never reaches the web server's logs, and the app
+removes it from the address bar immediately. Idle sign-out ends only this browser's session and counts activity in
+any open ONIC Studio tab.
 
 ## Web app hardening (Phase 0)
 
@@ -96,3 +108,5 @@ cover the same ground in CI.
 | 0 | Skill vendoring could follow symlinks or accept a fork-only commit or a non-permissive extra licence | Script rejects symlinks, requires the commit to be on upstream's default branch, and fails on extra licence files |
 | 1 | Local Edge Runtime in the build sandbox can't load npm packages through its TLS proxy | Local-only: functions were exercised under Deno directly; CI runs the real runtime |
 | 1 | Supabase's "sign out everywhere" API needs the user's own token | `revoke_user_sessions()` (server-only) deletes the user's sessions; access tokens expire within 5 minutes |
+| 1 | Approver could approve own job; designer could set a budget; last-Admin race; audit actor missing; session-revoke errors ignored; idle sign-out was global and per-tab; email token in query string; deploy secrets visible to every step; SITE_URL unchecked | Fixed (independent review) — covered by new database checks and browser journeys |
+| 1 | Production web address missing from the Edge Function origin allowlist | **Pending** Vercel address |

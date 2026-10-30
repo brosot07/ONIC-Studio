@@ -18,9 +18,9 @@ const latestEmail = async (to: string): Promise<string> => {
 
 /** The /auth/confirm link from an email, pointed at the app under test. */
 const confirmLink = (html: string, baseURL: string): string => {
-  const href = /href="([^"]*\/auth\/confirm\?[^"]+)"/.exec(html)![1]!.replace(/&amp;/g, '&')
+  const href = /href="([^"]*\/auth\/confirm#[^"]+)"/.exec(html)![1]!.replace(/&amp;/g, '&')
   const url = new URL(href)
-  return `${baseURL}/auth/confirm${url.search}`
+  return `${baseURL}/auth/confirm${url.hash}`
 }
 
 const signInUi = async (page: Page, email: string, password = PASSWORD) => {
@@ -43,7 +43,7 @@ test('a designer signs in without a code and sees no admin pages', async ({ page
   await signInUi(page, 'sari@onic.test')
   await expect(page.getByRole('heading', { name: 'What do you want to make?' })).toBeVisible()
   await expect(page.getByText('Social Media')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'People' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'People', exact: true })).toHaveCount(0)
 })
 
 test('wrong password gives a plain-language error', async ({ page }) => {
@@ -55,7 +55,7 @@ test('wrong password gives a plain-language error', async ({ page }) => {
 test('an Admin must set up two-step sign-in before anything else', async ({ page }) => {
   await createPerson('boss@onic.test', ['admin', 'approver'], null)
   await signInUi(page, 'boss@onic.test')
-  await expect(page.getByRole('heading', { name: 'Set up two-step sign-in' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Set up two.step sign.in/ })).toBeVisible()
   const secret = (await page.locator('.secret').textContent())!.trim()
 
   await page.getByLabel('6-digit code').fill('000000')
@@ -64,7 +64,7 @@ test('an Admin must set up two-step sign-in before anything else', async ({ page
 
   await page.getByLabel('6-digit code').fill(totp(secret))
   await page.getByRole('button', { name: 'Confirm' }).click()
-  await expect(page.getByRole('button', { name: 'People' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'People', exact: true })).toBeVisible()
   await page.screenshot({ path: 'test-results/local/home-admin.png' })
 
   // Next sign-in asks for the code instead of setting it up again.
@@ -73,7 +73,7 @@ test('an Admin must set up two-step sign-in before anything else', async ({ page
   await expect(page.getByRole('heading', { name: 'Enter your sign-in code' })).toBeVisible()
   await page.getByLabel('6-digit code').fill(totp(secret))
   await page.getByRole('button', { name: 'Confirm' }).click()
-  await expect(page.getByRole('button', { name: 'People' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'People', exact: true })).toBeVisible()
 })
 
 test('Admin invites a merch designer, who sets a password and signs in', async ({ page, baseURL }) => {
@@ -83,7 +83,7 @@ test('Admin invites a merch designer, who sets a password and signs in', async (
   await signInUi(page, 'boss@onic.test')
   await page.getByLabel('6-digit code').fill(totp(secret))
   await page.getByRole('button', { name: 'Confirm' }).click()
-  await page.getByRole('button', { name: 'People' }).click()
+  await page.getByRole('button', { name: 'People', exact: true }).click()
   await page.getByRole('button', { name: 'Invite someone' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('Full name').fill('Maya Merch')
@@ -128,7 +128,7 @@ test('a turned-off account cannot sign in', async ({ page }) => {
   await signInUi(page, 'boss@onic.test')
   await page.getByLabel('6-digit code').fill(totp(secret))
   await page.getByRole('button', { name: 'Confirm' }).click()
-  await page.getByRole('button', { name: 'People' }).click()
+  await page.getByRole('button', { name: 'People', exact: true }).click()
   page.once('dialog', (d) => void d.accept())
   await page.getByRole('row', { name: /sari/ }).getByRole('button', { name: 'Turn off account' }).click()
   await expect(page.getByRole('row', { name: /sari/ })).toContainText('Turned off')

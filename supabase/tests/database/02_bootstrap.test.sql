@@ -2,6 +2,9 @@ begin;
 create extension if not exists pgtap with schema extensions;
 select plan(4);
 
+-- Start from an installation with no Admin (other test data may exist locally).
+delete from public.user_roles where role = 'admin';
+
 insert into auth.users (id, email, aud, role) values
   ('f0000000-0000-4000-8000-00000000000f', 'first@onic.test', 'authenticated', 'authenticated'),
   ('f1000000-0000-4000-8000-00000000000f', 'second@onic.test', 'authenticated', 'authenticated');

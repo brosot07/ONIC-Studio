@@ -37,8 +37,9 @@ export const App = () => {
     return () => data.subscription.unsubscribe()
   }, [])
 
+  // Signs out this browser only; "Sign out everywhere" is an Admin action.
   const signOut = useCallback(async (why: MessageKey | null = null) => {
-    await supabase?.auth.signOut()
+    await supabase?.auth.signOut({ scope: 'local' })
     setAccess(null)
     setMfa(null)
     setPage('home')
@@ -108,7 +109,7 @@ export const App = () => {
   const isAdmin = access.roles.includes('admin')
   return (
     <Shell access={access} page={page} onNavigate={setPage} onSignOut={() => void signOut()}>
-      {page === 'admin-users' && isAdmin ? <Users meId={access.userId} /> : <Home />}
+      {page === 'admin-users' && isAdmin ? <Users meId={access.userId} /> : <Home team={access.team} />}
     </Shell>
   )
 }

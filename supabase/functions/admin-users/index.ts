@@ -7,7 +7,6 @@ import { isAllowedOrigin } from '../_shared/config.ts'
 import { HttpError, handle, json } from '../_shared/http.ts'
 import { audit, rateLimit, requireAdmin, serverClient } from '../_shared/supabase.ts'
 
-const ORG_ID = '00000000-0000-4000-8000-000000000001'
 const role = z.enum(['admin', 'approver', 'social_designer', 'merch_designer'])
 const team = z.enum(['social', 'merch']).nullable()
 const uuid = z.uuid()
@@ -33,19 +32,23 @@ const checkTeamAndRoles = (teamSlug: 'social' | 'merch' | null, roles: string[])
     throw new HttpError(400, 'team_mismatch', 'A Merch Designer must be in the Merchandise team.')
   if (designer.length === 0 && teamSlug !== null)
     throw new HttpError(400, 'team_without_role', 'Only designers belong to a team. Admins and Approvers see both teams.')
+  if (designer.length === 1 && (roles.includes('approver') || roles.includes('admin')))
+    throw new HttpError(400, 'designer_and_approver', 'A designer can’t also be an Admin or Approver — nobody approves their own work.')
 }
 
-const teamId = async (db: SupabaseClient, slug: 'social' | 'merch' | null): Promise<string | null> => {
-  if (!slug) return null
-  const { data, error } = await db.from('teams').select('id').eq('slug', slug).single()
-  if (error) throw error
-  return data.id as string
+/** Turns database refusals from the people-management functions into plain language. */
+const fromDb = (error: { code?: string; hint?: string | null; message?: string }): HttpError => {
+  if (error.hint === 'last_admin') return new HttpError(400, 'last_admin', 'ONIC Studio needs at least one Admin.')
+  if (error.code === 'P0002') return new HttpError(404, 'not_found', 'That person no longer exists.')
+  if (error.code === '22023') return new HttpError(400, 'invalid_roles', 'That combination of team and role isn’t allowed.')
+  if (error.code === '23505') return new HttpError(409, 'exists', 'Someone with this email already has an account.')
+  return new HttpError(500, 'server_error', 'Something went wrong on our side. Try again in a minute.')
 }
 
-const adminCount = async (db: SupabaseClient): Promise<number> => {
-  const { data, error } = await db.from('user_roles').select('user_id, profiles!inner(disabled)').eq('role', 'admin').eq('profiles.disabled', false)
-  if (error) throw error
-  return data.length
+const revokeSessions = async (db: SupabaseClient, userId: string): Promise<number> => {
+  const { data, error } = await db.rpc('revoke_user_sessions', { p_user: userId })
+  if (error) throw fromDb(error)
+  return data as number
 }
 
 const linkTarget = (req: Request): string => {
@@ -73,7 +76,7 @@ Deno.serve(
         const roles = [...new Set(body.roles)]
         checkTeamAndRoles(body.team, roles)
         const email = body.email.toLowerCase()
-        const { data: existing } = await db.from('profiles').select('id').ilike('email', email).maybeSingle()
+        const { data: existing } = await db.from('profiles').select('id').eq('email', email).maybeSingle()
         if (existing) throw new HttpError(409, 'exists', 'Someone with this email already has an account.')
 
         const { data: invited, error } = await db.auth.admin.inviteUserByEmail(email, {
@@ -83,89 +86,55 @@ Deno.serve(
         if (error || !invited.user) throw new HttpError(400, 'invite_failed', 'The invite couldn’t be sent. Check the email address.')
         const userId = invited.user.id
 
-        try {
-          const tid = await teamId(db, body.team)
-          const { error: pErr } = await db.from('profiles').insert({ id: userId, org_id: ORG_ID, team_id: tid, full_name: body.full_name, email })
-          if (pErr) throw pErr
-          const { error: rErr } = await db.from('user_roles').insert(roles.map((r) => ({ user_id: userId, role: r })))
-          if (rErr) throw rErr
-          const { error: iErr } = await db.from('invitations').insert({ email, user_id: userId, roles, team_id: tid, invited_by: caller.id })
-          if (iErr) throw iErr
-        } catch (e) {
+        const { error: pErr } = await db.rpc('admin_create_profile', {
+          p_actor: caller.id, p_user: userId, p_email: email, p_full_name: body.full_name, p_team: body.team, p_roles: roles,
+        })
+        if (pErr) {
           await db.auth.admin.deleteUser(userId)
-          throw e
+          throw fromDb(pErr)
         }
-        await audit(db, caller.id, 'user.invited', userId, { roles, team: body.team })
         return json(req, 200, { ok: true, user_id: userId })
       }
 
       case 'update': {
-        const { data: current, error } = await db.from('profiles').select('team_id, teams(slug)').eq('id', body.user_id).maybeSingle()
-        if (error) throw error
-        if (!current) throw new HttpError(404, 'not_found', 'That person no longer exists.')
-        const { data: currentRoles } = await db.from('user_roles').select('role').eq('user_id', body.user_id)
-        const roles = body.roles ? [...new Set(body.roles)] : (currentRoles ?? []).map((r) => r.role as string)
-        const currentSlug = ((current as unknown as { teams: { slug: 'social' | 'merch' } | null }).teams?.slug ?? null)
-        const nextTeam = body.team === undefined ? currentSlug : body.team
-        checkTeamAndRoles(nextTeam, roles)
-
-        const hadAdmin = (currentRoles ?? []).some((r) => r.role === 'admin')
-        if (hadAdmin && !roles.includes('admin')) {
-          notSelf(caller.id, body.user_id, 'remove Admin from')
-          if ((await adminCount(db)) <= 1) throw new HttpError(400, 'last_admin', 'ONIC Studio needs at least one Admin.')
-        }
-
-        const patch: Record<string, unknown> = {}
-        if (body.full_name) patch['full_name'] = body.full_name
-        if (body.team !== undefined) patch['team_id'] = await teamId(db, body.team)
-        if (Object.keys(patch).length) {
-          const { error: uErr } = await db.from('profiles').update(patch).eq('id', body.user_id)
-          if (uErr) throw uErr
-        }
-        if (body.roles) {
-          const before = new Set((currentRoles ?? []).map((r) => r.role as string))
-          const remove = [...before].filter((r) => !roles.includes(r))
-          const add = roles.filter((r) => !before.has(r))
-          if (remove.length) {
-            const { error: dErr } = await db.from('user_roles').delete().eq('user_id', body.user_id).in('role', remove)
-            if (dErr) throw dErr
-          }
-          if (add.length) {
-            const { error: aErr } = await db.from('user_roles').insert(add.map((r) => ({ user_id: body.user_id, role: r })))
-            if (aErr) throw aErr
-          }
-          // New permissions must not ride on an old session.
-          if (remove.length || add.length) await db.rpc('revoke_user_sessions', { p_user: body.user_id })
-        }
-        await audit(db, caller.id, 'user.updated', body.user_id, { team: nextTeam, roles })
+        if (body.roles) notSelf(caller.id, body.user_id, 'change the roles of')
+        if (body.roles && body.team !== undefined) checkTeamAndRoles(body.team, [...new Set(body.roles)])
+        const { data: rolesChanged, error } = await db.rpc('admin_update_user', {
+          p_actor: caller.id,
+          p_user: body.user_id,
+          p_full_name: body.full_name ?? null,
+          p_team_set: body.team !== undefined,
+          p_team: body.team ?? null,
+          p_roles: body.roles ? [...new Set(body.roles)] : null,
+        })
+        if (error) throw fromDb(error)
+        // New permissions must not ride on an old session.
+        if (rolesChanged) await revokeSessions(db, body.user_id)
         return json(req, 200, { ok: true })
       }
 
       case 'disable': {
         notSelf(caller.id, body.user_id, 'turn off')
-        const { data: target } = await db.from('user_roles').select('role').eq('user_id', body.user_id).eq('role', 'admin')
-        if (target?.length && (await adminCount(db)) <= 1) throw new HttpError(400, 'last_admin', 'ONIC Studio needs at least one Admin.')
+        // Database first: it refuses if this would leave no active Admin, and ends their sessions.
+        const { error } = await db.rpc('admin_set_disabled', { p_actor: caller.id, p_user: body.user_id, p_disabled: true })
+        if (error) throw fromDb(error)
         const { error: bErr } = await db.auth.admin.updateUserById(body.user_id, { ban_duration: '876000h' })
         if (bErr) throw bErr
-        const { error } = await db.from('profiles').update({ disabled: true }).eq('id', body.user_id)
-        if (error) throw error
-        await db.rpc('revoke_user_sessions', { p_user: body.user_id })
         return json(req, 200, { ok: true })
       }
 
       case 'enable': {
+        const { error } = await db.rpc('admin_set_disabled', { p_actor: caller.id, p_user: body.user_id, p_disabled: false })
+        if (error) throw fromDb(error)
         const { error: bErr } = await db.auth.admin.updateUserById(body.user_id, { ban_duration: 'none' })
         if (bErr) throw bErr
-        const { error } = await db.from('profiles').update({ disabled: false }).eq('id', body.user_id)
-        if (error) throw error
         return json(req, 200, { ok: true })
       }
 
       case 'sign_out_everywhere': {
-        const { data, error } = await db.rpc('revoke_user_sessions', { p_user: body.user_id })
-        if (error) throw error
-        await audit(db, caller.id, 'user.signed_out_everywhere', body.user_id, { sessions: data })
-        return json(req, 200, { ok: true, sessions: data })
+        const sessions = await revokeSessions(db, body.user_id)
+        await audit(db, caller.id, 'user.signed_out_everywhere', body.user_id, { sessions })
+        return json(req, 200, { ok: true, sessions })
       }
 
       case 'send_password_link': {

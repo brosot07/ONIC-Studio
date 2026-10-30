@@ -5,7 +5,8 @@ create function private.bootstrap_admin(p_email text, p_full_name text)
 returns uuid language plpgsql security definer set search_path = '' as $$
 declare uid uuid;
 begin
-  if exists (select 1 from public.user_roles where role = 'admin') then
+  -- Turned-off Admins don't count, so a locked-out installation can be recovered.
+  if exists (select 1 from public.user_roles ur join public.profiles p on p.id = ur.user_id where ur.role = 'admin' and not p.disabled) then
     raise exception 'An Admin already exists. Invite people from ONIC Studio → People instead.';
   end if;
   select id into uid from auth.users where lower(email) = lower(trim(p_email));

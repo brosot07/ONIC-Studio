@@ -79,6 +79,9 @@ begin
     if not (private.is_approver() and private.is_active()) then
       raise exception 'only the Approver, signed in with two-step verification, can do this' using errcode = '42501';
     end if;
+    if j.created_by = auth.uid() then
+      raise exception 'someone else has to approve your own work' using errcode = '42501';
+    end if;
     if p_to = 'REJECTED' and coalesce(length(trim(p_note)), 0) = 0 then
       raise exception 'a rejection needs a note for the designer' using errcode = '22023';
     end if;
@@ -112,7 +115,17 @@ begin
     if new.state <> 'DRAFT' then
       raise exception 'new jobs start as DRAFT' using errcode = '42501';
     end if;
+    -- Budgets and timestamps are the server's to set, never the browser's.
+    if current_user = 'authenticated' then
+      new.budget_credits := 0;
+      new.created_by := auth.uid();
+    end if;
+    new.created_at := now();
+    new.updated_at := now();
     return new;
+  end if;
+  if new.budget_credits is distinct from old.budget_credits and current_user = 'authenticated' then
+    raise exception 'budgets are set by the server' using errcode = '42501';
   end if;
   if new.state is distinct from old.state and current_setting('onic.transition', true) is distinct from 'on' then
     raise exception 'job state can only change through transition_job()' using errcode = '42501';
@@ -154,8 +167,9 @@ create policy jobs_edit on public.jobs for update to authenticated
 create policy job_transitions_read on public.job_transitions for select to authenticated
   using (exists (select 1 from public.jobs j where j.id = job_id and private.can_see_team(j.team_id)));
 
-grant select, insert on public.jobs to authenticated;
-grant update (title, budget_credits) on public.jobs to authenticated;
+grant select on public.jobs to authenticated;
+grant insert (team_id, type, title) on public.jobs to authenticated;
+grant update (title) on public.jobs to authenticated;
 grant select on public.job_transitions to authenticated;
 
 grant select, insert, update on public.jobs to service_role;

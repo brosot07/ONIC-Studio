@@ -252,6 +252,7 @@ select {
 .login-form h1,
 .page h1 {
   margin: 0;
+  text-wrap: balance;
   font-size: var(--step-3);
   font-weight: 750;
   font-stretch: 112%;
@@ -552,4 +553,73 @@ fieldset.field legend {
   .row-actions {
     justify-content: flex-start;
   }
+}
+
+/* ---------- Home: what do you want to make ---------- */
+
+.make-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.make-team {
+  margin: 8px 0 0;
+  font-size: var(--step-1);
+  font-weight: 700;
+}
+
+.make-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.make-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-height: 132px;
+  padding: 18px 18px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.make-card:not(:disabled):hover {
+  border-color: var(--text);
+}
+
+.make-card:disabled {
+  cursor: default;
+}
+
+.make-title {
+  font-size: var(--step-1);
+  font-weight: 750;
+  font-stretch: 112%;
+  line-height: 1.2;
+}
+
+.make-hint {
+  color: var(--text-muted);
+  font-size: var(--step--1);
+}
+
+.make-badge {
+  margin-top: auto;
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--line);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
 }

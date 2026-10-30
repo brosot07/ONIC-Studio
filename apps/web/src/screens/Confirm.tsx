@@ -5,11 +5,12 @@ import { AuthLayout } from '../ui/AuthLayout'
 import { ErrorNote } from '../ui/Notice'
 
 /**
- * Landing page for invite and password-reset emails (/auth/confirm?token_hash=…&type=…).
+ * Landing page for invite and password-reset emails (/auth/confirm#token_hash=…&type=…).
+ * The one-time code travels after '#', so it never reaches the web server or its logs.
  * Exchanges the one-time link for a session, then hands over to "choose a password".
  */
 const readLink = (): { tokenHash: string; type: 'invite' | 'recovery' } | null => {
-  const params = new URLSearchParams(window.location.search)
+  const params = new URLSearchParams(window.location.hash.slice(1))
   const tokenHash = params.get('token_hash')
   const type = params.get('type')
   return tokenHash && (type === 'invite' || type === 'recovery') ? { tokenHash, type } : null

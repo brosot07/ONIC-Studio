@@ -11,6 +11,7 @@ alter default privileges in schema public revoke execute on functions from anon,
 create schema if not exists private;
 revoke all on schema private from public, anon;
 grant usage on schema private to authenticated, service_role;
+alter default privileges in schema private revoke execute on functions from public;
 
 create type public.app_role as enum ('admin', 'approver', 'social_designer', 'merch_designer');
 create type public.team_slug as enum ('social', 'merch');
@@ -168,9 +169,11 @@ revoke all on function public.my_access() from public, anon;
 grant execute on function public.my_access() to authenticated;
 
 /** The only way to write the audit log. */
+/** Actor is the signed-in person, or the Admin a server function is acting for (onic.actor). */
 create function private.audit(p_action text, p_target text default null, p_details jsonb default '{}'::jsonb)
 returns void language sql security definer set search_path = '' as $$
-  insert into public.audit_log (actor, action, target, details) values (auth.uid(), p_action, p_target, coalesce(p_details, '{}'::jsonb))
+  insert into public.audit_log (actor, action, target, details)
+  values (coalesce(auth.uid(), nullif(current_setting('onic.actor', true), '')::uuid), p_action, p_target, coalesce(p_details, '{}'::jsonb))
 $$;
 revoke all on function private.audit(text, text, jsonb) from public, anon, authenticated;
 grant execute on function private.audit(text, text, jsonb) to service_role;
@@ -276,6 +279,106 @@ begin
 end
 $$;
 create trigger sessions_audit after insert on auth.sessions for each row execute function private.audit_sign_in();
+
+-- ---------------------------------------------------------------------------
+-- People management (called only by the admin-users Edge Function, as the service role).
+-- Each runs in one transaction under a lock, so two Admins acting at once can't remove the last Admin.
+-- ---------------------------------------------------------------------------
+
+/** Designers belong to exactly the matching team; Admin/Approver have no team and no designer role. */
+create function private.check_roles_team(p_roles public.app_role[], p_team public.team_slug)
+returns void language plpgsql immutable set search_path = '' as $$
+declare designers int := cardinality(array(select unnest(p_roles) intersect select unnest(array['social_designer','merch_designer']::public.app_role[])));
+begin
+  if cardinality(p_roles) = 0 then raise exception 'at least one role' using errcode = '22023'; end if;
+  if designers > 1 then raise exception 'one designer role only' using errcode = '22023'; end if;
+  if designers = 1 and ('approver' = any(p_roles) or 'admin' = any(p_roles)) then
+    raise exception 'designers cannot also approve or administer' using errcode = '22023';
+  end if;
+  if 'social_designer' = any(p_roles) and p_team is distinct from 'social' then raise exception 'team mismatch' using errcode = '22023'; end if;
+  if 'merch_designer' = any(p_roles) and p_team is distinct from 'merch' then raise exception 'team mismatch' using errcode = '22023'; end if;
+  if designers = 0 and p_team is not null then raise exception 'only designers have a team' using errcode = '22023'; end if;
+end
+$$;
+
+create function private.lock_people(p_actor uuid) returns void
+language sql security definer set search_path = '' as $$
+  select pg_advisory_xact_lock(hashtext('onic.people')), set_config('onic.actor', p_actor::text, true)
+$$;
+
+create function private.assert_an_admin_remains() returns void
+language plpgsql security definer set search_path = '' as $$
+begin
+  if not exists (select 1 from public.user_roles ur join public.profiles p on p.id = ur.user_id where ur.role = 'admin' and not p.disabled) then
+    raise exception 'ONIC Studio needs at least one Admin' using errcode = 'P0001', hint = 'last_admin';
+  end if;
+end
+$$;
+
+create function public.admin_create_profile(p_actor uuid, p_user uuid, p_email text, p_full_name text, p_team public.team_slug, p_roles public.app_role[])
+returns void language plpgsql security definer set search_path = '' as $$
+declare tid uuid;
+begin
+  perform private.lock_people(p_actor);
+  perform private.check_roles_team(p_roles, p_team);
+  select id into tid from public.teams where slug = p_team;
+  insert into public.profiles (id, org_id, team_id, full_name, email)
+  values (p_user, '00000000-0000-4000-8000-000000000001', tid, trim(p_full_name), lower(trim(p_email)));
+  insert into public.user_roles (user_id, role) select p_user, r from unnest(p_roles) r;
+  insert into public.invitations (email, user_id, roles, team_id, invited_by) values (lower(trim(p_email)), p_user, p_roles, tid, p_actor);
+  perform private.audit('user.invited', p_user::text, jsonb_build_object('roles', p_roles, 'team', p_team));
+end
+$$;
+
+/** Changes name, team and/or roles. Returns true when roles changed (caller then ends their sessions). */
+create function public.admin_update_user(p_actor uuid, p_user uuid, p_full_name text, p_team_set boolean, p_team public.team_slug, p_roles public.app_role[])
+returns boolean language plpgsql security definer set search_path = '' as $$
+declare
+  cur_team public.team_slug;
+  cur_roles public.app_role[];
+  next_team public.team_slug;
+  next_roles public.app_role[];
+begin
+  perform private.lock_people(p_actor);
+  select t.slug into cur_team from public.profiles p left join public.teams t on t.id = p.team_id where p.id = p_user;
+  if not found then raise exception 'not found' using errcode = 'P0002'; end if;
+  select coalesce(array_agg(role order by role), '{}') into cur_roles from public.user_roles where user_id = p_user;
+  next_team := case when p_team_set then p_team else cur_team end;
+  next_roles := coalesce((select array_agg(distinct r order by r) from unnest(p_roles) r), cur_roles);
+  perform private.check_roles_team(next_roles, next_team);
+
+  update public.profiles
+     set full_name = coalesce(nullif(trim(p_full_name), ''), full_name),
+         team_id = (select id from public.teams where slug = next_team)
+   where id = p_user;
+  delete from public.user_roles where user_id = p_user and not (role = any(next_roles));
+  insert into public.user_roles (user_id, role) select p_user, r from unnest(next_roles) r on conflict do nothing;
+
+  perform private.assert_an_admin_remains();
+  perform private.audit('user.updated', p_user::text, jsonb_build_object('team', next_team, 'roles', next_roles));
+  return next_roles is distinct from cur_roles;
+end
+$$;
+
+create function public.admin_set_disabled(p_actor uuid, p_user uuid, p_disabled boolean)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  perform private.lock_people(p_actor);
+  update public.profiles set disabled = p_disabled where id = p_user;
+  if not found then raise exception 'not found' using errcode = 'P0002'; end if;
+  perform private.assert_an_admin_remains();
+  if p_disabled then
+    delete from auth.sessions where user_id = p_user;
+  end if;
+end
+$$;
+
+revoke all on function public.admin_create_profile(uuid, uuid, text, text, public.team_slug, public.app_role[]) from public, anon, authenticated;
+revoke all on function public.admin_update_user(uuid, uuid, text, boolean, public.team_slug, public.app_role[]) from public, anon, authenticated;
+revoke all on function public.admin_set_disabled(uuid, uuid, boolean) from public, anon, authenticated;
+grant execute on function public.admin_create_profile(uuid, uuid, text, text, public.team_slug, public.app_role[]) to service_role;
+grant execute on function public.admin_update_user(uuid, uuid, text, boolean, public.team_slug, public.app_role[]) to service_role;
+grant execute on function public.admin_set_disabled(uuid, uuid, boolean) to service_role;
 
 -- ---------------------------------------------------------------------------
 -- Row-level security

@@ -1,7 +1,7 @@
 -- Who can see and change what. Every role tries to cross team lines and skip approval; all must fail.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(44);
+select plan(54);
 
 -- People ---------------------------------------------------------------------
 insert into auth.users (id, email, aud, role) values
@@ -72,7 +72,15 @@ select is_empty('select 1 from public.settings', 'Social Designer cannot read se
 select throws_ok($$insert into public.settings (key, value) values ('x', '1')$$, '42501', null, 'Social Designer cannot write settings');
 select results_eq('select user_id from public.user_roles', $$values ('c0000000-0000-4000-8000-00000000000c'::uuid)$$,
   'Social Designer sees only their own roles');
-select results_eq('select count(*)::int from public.profiles', $$values (2)$$, 'Social Designer sees only social teammates');
+select results_eq($$select count(*)::int from public.profiles where email like '%@onic.test' and id in
+  ('a0000000-0000-4000-8000-00000000000a','b0000000-0000-4000-8000-00000000000b','c0000000-0000-4000-8000-00000000000c',
+   'd0000000-0000-4000-8000-00000000000d','e0000000-0000-4000-8000-00000000000e')$$, $$values (2)$$, 'Social Designer sees only social teammates');
+select throws_ok($$insert into public.jobs (team_id, type, title, budget_credits) values ((select id from public.teams where slug = 'social'), 'feed_post', 'rich', 999999)$$,
+  '42501', null, 'designers cannot set their own credit budget');
+select throws_ok($$update public.jobs set budget_credits = 999999 where team_id = (select id from public.teams where slug = 'social')$$,
+  '42501', null, 'designers cannot raise a budget later');
+select throws_ok($$insert into public.jobs (team_id, type, title, created_by) values ((select id from public.teams where slug = 'social'), 'feed_post', 'as someone else', 'd0000000-0000-4000-8000-00000000000d')$$,
+  '42501', null, 'designers cannot create jobs in someone else''s name');
 select throws_ok($$select public.rate_limit_hit(auth.uid(), 'x', 1, 60)$$, '42501', null, 'rate limiter is server-only');
 select throws_ok($$select public.revoke_user_sessions('a0000000-0000-4000-8000-00000000000a')$$, '42501', null, 'session revocation is server-only');
 select throws_ok($$select public.audit_event(auth.uid(), 'fake', null, '{}')$$, '42501', null, 'designers cannot write to the audit log');
@@ -112,13 +120,42 @@ reset role;
 
 -- Head of Design with two-step sign-in -------------------------------------------
 select pg_temp.act_as('b0000000-0000-4000-8000-00000000000b', 'aal2');
-select results_eq('select count(*)::int from public.jobs', $$values (3)$$, 'Approver sees jobs from both teams');
+select results_eq($$select count(*)::int from public.jobs where title in ('Social job', 'Merch job', 'mine')$$, $$values (3)$$, 'Approver sees jobs from both teams');
 select throws_ok($$select public.transition_job('10000000-0000-4000-8000-000000000001', 'REJECTED', '  ')$$,
   '22023', null, 'a rejection needs a note');
 select lives_ok($$select public.transition_job('10000000-0000-4000-8000-000000000001', 'APPROVED')$$, 'Approver approves');
 select throws_ok($$select public.transition_job('10000000-0000-4000-8000-000000000001', 'SCHEDULED')$$,
   '42501', null, 'not even the Approver can schedule; only the server');
 select ok((select count(*) from public.audit_log where action = 'job.approved') = 1, 'approval is in the audit log');
+reset role;
+
+-- Nobody approves their own work ----------------------------------------------------
+reset role;
+insert into public.jobs (id, team_id, type, title, created_by, state) values
+  ('30000000-0000-4000-8000-000000000003', (select id from public.teams where slug = 'social'), 'feed_post', 'HoD job', 'b0000000-0000-4000-8000-00000000000b', 'DRAFT');
+select set_config('onic.transition', 'on', true);
+update public.jobs set state = 'PENDING_APPROVAL' where id = '30000000-0000-4000-8000-000000000003';
+select set_config('onic.transition', 'off', true);
+select pg_temp.act_as('b0000000-0000-4000-8000-00000000000b', 'aal2');
+select throws_ok($$select public.transition_job('30000000-0000-4000-8000-000000000003', 'APPROVED')$$,
+  '42501', null, 'the Approver cannot approve a job they created');
+reset role;
+
+-- People management functions -------------------------------------------------------
+select pg_temp.act_as('a0000000-0000-4000-8000-00000000000a', 'aal2');
+select throws_ok($$select public.admin_set_disabled('a0000000-0000-4000-8000-00000000000a', 'c0000000-0000-4000-8000-00000000000c', true)$$,
+  '42501', null, 'people-management functions are server-only');
+reset role;
+select pg_temp.act_as_server();
+select throws_ok($$select public.admin_update_user('a0000000-0000-4000-8000-00000000000a', 'c0000000-0000-4000-8000-00000000000c', null, false, null, array['approver','social_designer']::public.app_role[])$$,
+  '22023', null, 'a designer cannot also be an Approver');
+select lives_ok($$select public.admin_set_disabled('a0000000-0000-4000-8000-00000000000a', 'b0000000-0000-4000-8000-00000000000b', true)$$,
+  'one Admin can turn another off while an Admin remains');
+select throws_ok($$select public.admin_set_disabled('b0000000-0000-4000-8000-00000000000b', 'a0000000-0000-4000-8000-00000000000a', true)$$,
+  'P0001', null, 'the last active Admin cannot be turned off');
+select ok((select actor = 'a0000000-0000-4000-8000-00000000000a' from public.audit_log where action = 'user.disabled' order by id desc limit 1),
+  'the audit log names the Admin who turned the account off');
+select lives_ok($$select public.admin_set_disabled('a0000000-0000-4000-8000-00000000000a', 'b0000000-0000-4000-8000-00000000000b', false)$$, 'and back on');
 reset role;
 
 -- Admin -----------------------------------------------------------------------
