@@ -12,6 +12,9 @@ import { MfaChallenge, MfaEnroll } from './screens/Mfa'
 import { Shell, type Page } from './screens/Shell'
 import { Home } from './screens/Home'
 import { Users } from './screens/admin/Users'
+import { Brand } from './screens/library/Brand'
+import { Players } from './screens/library/Players'
+import { Sponsors } from './screens/library/Sponsors'
 
 type Flow = 'normal' | 'confirm' | 'set-password'
 
@@ -109,7 +112,17 @@ export const App = () => {
   const isAdmin = access.roles.includes('admin')
   return (
     <Shell access={access} page={page} onNavigate={setPage} onSignOut={() => void signOut()}>
-      {page === 'admin-users' && isAdmin ? <Users meId={access.userId} /> : <Home team={access.team} />}
+      {page === 'admin-users' && isAdmin ? (
+        <Users meId={access.userId} />
+      ) : page === 'brand' ? (
+        <Brand isAdmin={isAdmin} />
+      ) : page === 'players' ? (
+        <Players isAdmin={isAdmin} />
+      ) : page === 'sponsors' ? (
+        <Sponsors isAdmin={isAdmin} />
+      ) : (
+        <Home team={access.team} isAdmin={isAdmin} onNavigate={setPage} />
+      )}
     </Shell>
   )
 }

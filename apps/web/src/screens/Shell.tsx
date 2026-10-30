@@ -4,7 +4,7 @@ import type { Access } from '../lib/access'
 import { usePrefs } from '../lib/prefs'
 import { PrefsBar } from '../ui/PrefsBar'
 
-export type Page = 'home' | 'admin-users'
+export type Page = 'home' | 'brand' | 'players' | 'sponsors' | 'admin-users'
 
 export const Shell = ({
   access,
@@ -24,6 +24,9 @@ export const Shell = ({
   const teamLabel: MessageKey = access.team ? `shell.team.${access.team}` : 'shell.team.all'
   const nav: { id: Page; label: MessageKey; show: boolean }[] = [
     { id: 'home', label: 'shell.home', show: true },
+    { id: 'brand', label: 'shell.brand', show: true },
+    { id: 'players', label: 'shell.players', show: true },
+    { id: 'sponsors', label: 'shell.sponsors', show: true },
     { id: 'admin-users', label: 'shell.admin.users', show: isAdmin },
   ]
 

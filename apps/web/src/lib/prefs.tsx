@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { messages, type Lang, type MessageKey } from '@onic/shared'
+import { fill, messages, type Lang, type MessageKey } from '@onic/shared'
 
 export type ThemePref = 'system' | 'light' | 'dark'
 
@@ -8,7 +8,7 @@ interface Prefs {
   setLang: (lang: Lang) => void
   theme: ThemePref
   setTheme: (theme: ThemePref) => void
-  t: (key: MessageKey) => string
+  t: (key: MessageKey, params?: Record<string, string | number>) => string
 }
 
 const PrefsContext = createContext<Prefs | null>(null)
@@ -54,7 +54,10 @@ export const PrefsProvider = ({ children }: { children: ReactNode }) => {
     setThemeState(next)
     write('onic.theme', next)
   }, [])
-  const t = useCallback((key: MessageKey) => messages[lang][key], [lang])
+  const t = useCallback(
+    (key: MessageKey, params?: Record<string, string | number>) => fill(messages[lang][key], params),
+    [lang],
+  )
 
   const value = useMemo(() => ({ lang, setLang, theme, setTheme, t }), [lang, setLang, theme, setTheme, t])
   return <PrefsContext.Provider value={value}>{children}</PrefsContext.Provider>

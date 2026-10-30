@@ -427,3 +427,7 @@ content_path = "./supabase/templates/invite.html"
 [auth.email.template.recovery]
 subject = "Atur ulang kata sandi ONIC Studio / Reset your ONIC Studio password"
 content_path = "./supabase/templates/recovery.html"
+
+[functions.library-upload]
+enabled = true
+verify_jwt = true

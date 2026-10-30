@@ -623,3 +623,375 @@ fieldset.field legend {
   font-size: 0.75rem;
   font-weight: 600;
 }
+
+/* ---------- Setup checklist & libraries ---------- */
+
+.section-title {
+  margin: 12px 0 0;
+  font-size: var(--step-1);
+  font-weight: 750;
+  font-stretch: 112%;
+}
+
+.setup {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 28px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--onic-yellow);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+
+.setup-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.setup-head h2 {
+  margin: 0;
+  font-size: var(--step-2);
+  font-weight: 800;
+  font-stretch: 115%;
+}
+
+.setup-head .lede {
+  margin: 6px 0 0;
+  max-width: 60ch;
+}
+
+.setup-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 200px;
+  font-size: var(--step--1);
+  font-weight: 650;
+}
+
+.bar {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.bar > span {
+  display: block;
+  height: 100%;
+  background: var(--onic-yellow);
+}
+
+.slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.slot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg);
+  min-width: 0;
+}
+
+.slot .btn-small {
+  align-self: flex-start;
+}
+
+.slot-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.slot-head h3 {
+  margin: 0;
+  font-size: var(--step-0);
+  font-weight: 700;
+}
+
+.pill-needed {
+  border-color: var(--onic-yellow);
+  background: color-mix(in srgb, var(--onic-yellow) 18%, transparent);
+  color: var(--text);
+}
+
+.drop-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.drop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 72px;
+  padding: 12px;
+  border: 1.5px dashed var(--fog);
+  border-radius: var(--radius-m);
+  color: var(--text-muted);
+  font-size: var(--step--1);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.drop:hover,
+.drop.is-over {
+  border-color: var(--text);
+  background: color-mix(in srgb, var(--onic-yellow) 12%, transparent);
+  color: var(--text);
+}
+
+.drop:focus-within {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.drop.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.drop-label {
+  margin: 0 0 4px;
+  font-size: var(--step--1);
+  font-weight: 650;
+}
+
+.drop-status {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--step--1);
+}
+
+.drop-status li {
+  padding: 4px 0;
+  overflow-wrap: anywhere;
+}
+
+.drop-status .is-checking {
+  color: var(--text-muted);
+}
+
+.drop-status .is-added {
+  color: var(--ok-text);
+}
+
+.drop-status .is-refused {
+  color: var(--error-text);
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 0.75rem;
+}
+
+.tile-preview {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  /* Checkerboard shows transparency in cutouts and logos. */
+  background: repeating-conic-gradient(var(--line) 0 25%, var(--surface) 0 50%) 0 0 / 14px 14px;
+  overflow: hidden;
+}
+
+.tile-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.tile-ext {
+  font-weight: 800;
+  color: var(--text-muted);
+}
+
+.tile-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.tile-actions a,
+.tile-actions .link {
+  font-size: 0.75rem;
+  color: var(--text);
+}
+
+.field-inline {
+  max-width: 320px;
+}
+
+.field-narrow {
+  max-width: 140px;
+}
+
+.field select,
+.field textarea {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  font: inherit;
+  font-size: var(--step-0);
+  font-weight: 400;
+  color: var(--text);
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+fieldset.field textarea + textarea {
+  margin-top: 8px;
+}
+
+.row-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.row-form .field {
+  flex: 1 1 180px;
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.swatch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px 8px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+}
+
+.swatch-chip {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--line);
+}
+
+.swatch span:nth-child(2) {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--step--1);
+}
+
+.palette,
+.voices,
+.csv {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.voice-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.voice-form {
+  max-width: 720px;
+}
+
+.csv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.csv-actions .btn {
+  display: inline-flex;
+  align-items: center;
+}
+
+.entity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entity {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+
+.entity-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.entity-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--step--1);
+}
+
+.entity-drops {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.dialog-wide {
+  width: min(640px, calc(100vw - 32px));
+}

@@ -1,6 +1,7 @@
 /** Web origins allowed to call Edge Functions and to receive sign-in links. */
 const PRODUCTION_ORIGINS: readonly string[] = [
-  // Added when Vercel is connected, e.g. 'https://studio.onic.gg'.
+  'https://onic-studio-olive.vercel.app',
+  // Add the custom domain here once it's connected, e.g. 'https://studio.onic.gg'.
 ]
 
 // Local development and end-to-end tests only: the local stack is never reachable from the internet.
