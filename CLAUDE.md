@@ -8,3 +8,9 @@
 - Agents and anything that needs a secret run in Supabase Edge Functions, never in the browser.
 - Before pushing: `npm audit --audit-level=high && npm run typecheck && npm run lint && npm test && npm run test:e2e`.
 - Phase plan and decisions: README.md, SECURITY.md.
+
+## Helpers for this repo
+- `ui-designer` agent + `frontend-design` skill: any new or changed screen. Users have zero AI knowledge.
+- `ux-writer` agent: every word on screen and in emails, Bahasa Indonesia + English.
+- `usability-tester` agent: walk a flow as an AI-novice designer before handing a phase over.
+- `security-reviewer` agent: the independent review at the end of every phase.

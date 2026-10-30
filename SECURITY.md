@@ -15,6 +15,29 @@ chat or log.
 - AI agents run server-side, treat all web content, uploads and AI output as data (never instructions), and have no tool
   that publishes, deletes, changes permissions or spends beyond budget.
 
+## Database access (Phase 1)
+
+- Every table in `public` has RLS on (a test fails if one doesn't). Default privileges are revoked, so new tables are
+  unreachable until a migration grants access explicitly.
+- A **restrictive** policy on every table requires an active account and, for Admin/Approver, a two-step (`aal2`)
+  session. Admin and Approver see nothing at all until they enter their code.
+- Designers see only their own team's jobs and teammates. Admin and Approver see both teams.
+- Jobs change state only through `transition_job()`. QC results, scheduling and publishing are server-only;
+  approving, rejecting (with a required note) and finalising need the Approver role with `aal2`. Direct writes to
+  `state`, `team_id` or `created_by` are blocked by column grants and a trigger.
+- `audit_log` and `job_transitions` are append-only, even for the database owner. Logins, role and team changes,
+  approvals, invitations, account on/off and "sign out everywhere" are recorded.
+- The first Admin is created once with `private.bootstrap_admin()` from the SQL editor; it refuses to run again.
+- Tests: `supabase/tests/database/*.test.sql` (48 checks across every role) and `tests/e2e-local` (sign-in
+  journeys in a real browser). Supabase advisors must report no issues.
+
+## Server functions
+
+`admin-users` (invite, change team/role, turn account off/on, sign out everywhere, password link): verifies the
+sign-in token, re-reads roles from the database, requires Admin + `aal2`, validates input with zod, rate-limits to 30
+changes a minute, writes the audit log, and only answers allowlisted web origins. Admins can't turn off or demote
+themselves, and the last Admin can't be removed. Changing someone's roles ends their sessions.
+
 ## Web app hardening (Phase 0)
 
 Production headers are set in `apps/web/vercel.json` and mirrored by `vite preview`, so the browser tests check the real
@@ -66,8 +89,10 @@ cover the same ground in CI.
 | 0 | Supabase session is stored in browser storage, so an XSS could read it | Mitigated by a strict CSP (no inline/eval, no third-party scripts), React escaping, the no-raw-HTML lint rule, 5-minute access tokens and the 30-minute idle timeout |
 | 0 | Electronegativity no longer applies (moved from desktop to web) | Replaced by header + CSP browser tests and Semgrep |
 | 0 | CSP allows any `*.supabase.co` host, so stolen data could be sent to another Supabase project | Fixed — CSP names only `yjwmdwuhrjuvafgfvdsc.supabase.co`; a browser test checks another project is blocked |
-| 0 | Hosted Supabase auth settings can differ from `config.toml` | **Open** — Phase 1 pushes config and adds a drift check |
+| 0 | Hosted Supabase auth settings can differ from `config.toml` | Deploy workflow pushes `config.toml` (with the production address) on every deploy; **pending** the Vercel address (`SITE_URL`) |
 | 0 | Semgrep registry rules are fetched at run time and can change | Accepted: they only add checks; the scanner image itself is pinned by digest |
 | 0 | Skipped CodeQL/dependency-review jobs count as passing | Branch protection requires `verify`, `secrets` and `sast` explicitly |
 | 0 | `npm ci` could run a compromised package's install script | `ignore-scripts=true` in `.npmrc`; Dependabot waits 7 days before proposing new versions |
 | 0 | Skill vendoring could follow symlinks or accept a fork-only commit or a non-permissive extra licence | Script rejects symlinks, requires the commit to be on upstream's default branch, and fails on extra licence files |
+| 1 | Local Edge Runtime in the build sandbox can't load npm packages through its TLS proxy | Local-only: functions were exercised under Deno directly; CI runs the real runtime |
+| 1 | Supabase's "sign out everywhere" API needs the user's own token | `revoke_user_sessions()` (server-only) deletes the user's sessions; access tokens expire within 5 minutes |

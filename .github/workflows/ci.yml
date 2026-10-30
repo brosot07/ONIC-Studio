@@ -68,3 +68,29 @@ jobs:
         with:
           persist-credentials: false
       - run: semgrep scan --config p/typescript --config p/react --config p/secrets --config p/github-actions --error --metrics off
+
+  database:
+    name: Database rules + sign-in journeys (local Supabase)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Start local Supabase
+        run: npx supabase start -x studio,imgproxy,vector,logflare,supavisor
+      - name: Access-rule tests (every role tries to cross team lines and skip approval)
+        run: npx supabase test db
+      - name: Supabase advisors (must be clean)
+        run: npx supabase db advisors --local --fail-on warn
+      - name: Sign-in journeys in a real browser
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright test -c playwright.local.config.ts
+        env:
+          CI: '1'

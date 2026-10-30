@@ -32,6 +32,8 @@
   --focus: #0a66ff;
   --error-bg: #fdecec;
   --error-text: #8f1d21;
+  --ok-bg: #e7f5ea;
+  --ok-text: #1d5b2c;
   color-scheme: light;
 }
 
@@ -45,6 +47,8 @@
     --focus: #6aa5ff;
     --error-bg: #3a1617;
     --error-text: #ffb4b6;
+    --ok-bg: #16301d;
+    --ok-text: #a8e2b6;
     color-scheme: dark;
   }
 }
@@ -58,5 +62,7 @@
   --focus: #6aa5ff;
   --error-bg: #3a1617;
   --error-text: #ffb4b6;
+  --ok-bg: #16301d;
+  --ok-text: #a8e2b6;
   color-scheme: dark;
 }

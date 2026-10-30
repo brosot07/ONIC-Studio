@@ -27,7 +27,9 @@ describe('translations', () => {
   it('never mentions AI plumbing to designers', () => {
     const banned = /\b(prompt|model|api|token|claude|anthropic|higgsfield)\b/i
     for (const lang of ['id', 'en'] as const) {
-      for (const value of Object.values(messages[lang])) expect(value).not.toMatch(banned)
+      for (const [key, value] of Object.entries(messages[lang])) {
+        if (!key.startsWith('admin.')) expect(value, key).not.toMatch(banned)
+      }
     }
   })
 })

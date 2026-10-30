@@ -2,9 +2,11 @@ import { useState, type FormEvent } from 'react'
 import type { MessageKey } from '@onic/shared'
 import { supabase } from '../lib/supabase'
 import { usePrefs } from '../lib/prefs'
-import { PrefsBar } from '../ui/PrefsBar'
+import { isNetworkError } from '../lib/auth'
+import { AuthLayout } from '../ui/AuthLayout'
+import { ErrorNote, OkNote } from '../ui/Notice'
 
-export const Login = () => {
+export const Login = ({ notice, onForgot }: { notice?: MessageKey | null; onForgot: () => void }) => {
   const { t } = usePrefs()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -19,7 +21,11 @@ export const Login = () => {
     setError(null)
     try {
       const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
-      if (authError) setError(authError.status === 400 ? 'login.error.invalid' : 'login.error.network')
+      if (authError) {
+        if (authError.code === 'user_banned') setError('login.error.disabled')
+        else if (isNetworkError(authError)) setError('login.error.network')
+        else setError('login.error.invalid')
+      }
     } catch {
       setError('login.error.network')
     } finally {
@@ -28,53 +34,37 @@ export const Login = () => {
   }
 
   return (
-    <div className="login">
-      <section className="login-brand" aria-hidden="true">
-        <p className="wordmark">
-          <span>ONIC</span>
-          <span>Studio</span>
-        </p>
-      </section>
+    <AuthLayout>
+      <form className="stack" onSubmit={(e) => void onSubmit(e)} noValidate>
+        <h1>{t('login.title')}</h1>
+        <p className="lede">{t('login.lede')}</p>
+        {notice && <OkNote>{t(notice)}</OkNote>}
 
-      <section className="login-panel">
-        <PrefsBar />
-        <form className="login-form" onSubmit={(e) => void onSubmit(e)} noValidate>
-          <h1>{t('login.title')}</h1>
-          <p className="lede">{t('login.lede')}</p>
+        <label className="field">
+          <span>{t('login.email')}</span>
+          <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} disabled={busy} />
+        </label>
+        <label className="field">
+          <span>{t('login.password')}</span>
+          <input
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={busy}
+          />
+        </label>
 
-          <label className="field">
-            <span>{t('login.email')}</span>
-            <input
-              type="email"
-              autoComplete="username"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={busy}
-            />
-          </label>
-          <label className="field">
-            <span>{t('login.password')}</span>
-            <input
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={busy}
-            />
-          </label>
+        {error && <ErrorNote>{t(error)}</ErrorNote>}
 
-          {error && (
-            <p className="form-error" role="alert">
-              {t(error)}
-            </p>
-          )}
-
-          <button type="submit" className="btn btn-primary" disabled={busy || !supabase}>
-            {busy ? t('login.submitting') : t('login.submit')}
-          </button>
-          <p className="hint">{t('login.inviteOnly')}</p>
-        </form>
-      </section>
-    </div>
+        <button type="submit" className="btn btn-primary" disabled={busy || !supabase}>
+          {busy ? t('login.submitting') : t('login.submit')}
+        </button>
+        <button type="button" className="link" onClick={onForgot}>
+          {t('login.forgot')}
+        </button>
+        <p className="hint">{t('login.inviteOnly')}</p>
+      </form>
+    </AuthLayout>
   )
 }
