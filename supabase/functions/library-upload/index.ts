@@ -104,9 +104,36 @@ const readHead = async (db: ReturnType<typeof serverClient>, stagingPath: string
   return { url: signed.signedUrl, first: first.subarray(0, got), total }
 }
 
+/** Downloads a staged file, refusing it as soon as it passes `max` bytes (never buffers more than that). */
+const readCapped = async (url: string, max: number, maxLabel: string): Promise<Uint8Array> => {
+  const res = await fetch(url)
+  if (!res.ok || !res.body) throw new Rejected('missing')
+  const reader = res.body.getReader()
+  const parts: Uint8Array[] = []
+  let size = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.length
+    if (size > max) {
+      await reader.cancel()
+      throw new Rejected('too_large', { max: maxLabel })
+    }
+    parts.push(value)
+  }
+  const out = new Uint8Array(size)
+  let at = 0
+  for (const part of parts) {
+    out.set(part, at)
+    at += part.length
+  }
+  return out
+}
+
 /**
  * Videos are checked by their first bytes and size, then streamed from staging into a library bucket
- * without loading the whole file into memory.
+ * without loading the whole file into memory. While streaming, the first bytes must still be the ones that
+ * were checked (the file can't be swapped in between) and the size limit is enforced on what actually flows.
  */
 const streamVideo = async (
   db: ReturnType<typeof serverClient>,
@@ -119,33 +146,57 @@ const streamVideo = async (
   if (head.total > MAX_VIDEO) throw new Rejected('too_large', { max: '500 MB' })
   const full = await fetch(head.url)
   if (!full.ok || !full.body) throw new Rejected('missing')
+  const expected = head.first.subarray(0, 64)
+  let seen = 0
+  let problem: Rejected | null = null
+  const guard = new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, ctl) {
+      for (let i = 0; i < chunk.length && seen + i < expected.length; i++) {
+        if (chunk[i] !== expected[seen + i]) problem = new Rejected('wrong_type', { allowed: 'MP4, MOV' })
+      }
+      seen += chunk.length
+      if (seen > MAX_VIDEO) problem = new Rejected('too_large', { max: '500 MB' })
+      if (problem) throw problem
+      ctl.enqueue(chunk)
+    },
+  })
   const path = `${pathNoExt}.${type}`
-  const { error } = await db.storage.from(bucket).upload(path, full.body, { contentType: MIME[type], upsert: false, duplex: 'half' })
-  if (error) throw error
-  return { path, mime: MIME[type], bytes: head.total }
+  const { error } = await db.storage.from(bucket).upload(path, full.body.pipeThrough(guard), { contentType: MIME[type], upsert: false, duplex: 'half' })
+  if (problem || error) {
+    await db.storage.from(bucket).remove([path])
+    throw problem ?? error
+  }
+  return { path, mime: MIME[type], bytes: seen }
 }
 
-/** Downloads a staged image (at most 50 MB), then checks and rebuilds it. */
-const rebuildImage = async (db: ReturnType<typeof serverClient>, stagingPath: string, types: FileType[], minShortSide: number, thumb?: number) => {
-  const { data: blob, error: dlErr } = await db.storage.from('staging').download(stagingPath)
-  if (dlErr || !blob) throw new Rejected('missing')
-  if (blob.size > MAX_FILE) throw new Rejected('too_large', { max: '50 MB' })
-  const original = new Uint8Array(await blob.arrayBuffer())
+/** Downloads a staged image (at most 50 MB, checked before and during the download), then checks and rebuilds it. */
+const rebuildImage = async (head: Awaited<ReturnType<typeof readHead>>, types: FileType[], minShortSide: number, thumb?: number) => {
+  if (head.total > MAX_FILE) throw new Rejected('too_large', { max: '50 MB' })
+  const original = await readCapped(head.url, MAX_FILE, '50 MB')
   if (original.length === 0) throw new Rejected('unreadable')
   const type = sniff(original)
   if (!type || !types.includes(type)) throw new Rejected('wrong_type', { allowed: types.map((t) => LABEL[t]).join(', ') })
-  return { type, original, raster: type === 'png' || type === 'jpeg' ? await processRaster(original, type, { minShortSide, thumb }) : null }
+  return {
+    type,
+    original,
+    raster: type === 'png' || type === 'jpeg' ? await processRaster(original, type, { minShortSide, thumb, maxBytes: MAX_FILE }) : null,
+  }
 }
 
 /** Event photos and videos: Admins (with two-step sign-in) and Social designers. */
 const addEventFile = async (req: Request, db: ReturnType<typeof serverClient>, body: Extract<Body, { library: 'events' }>, caller: { id: string }) => {
   const head = await readHead(db, body.staging_path)
   const video = sniffVideo(head.first)
+  if (video) {
+    // Videos are big: a tighter limit per minute and per day than photos.
+    await rateLimit(db, caller.id, 'event-video', 30, 60)
+    await rateLimit(db, caller.id, 'event-video-day', 300, 86400)
+  }
   let out: { path: string; mime: string; bytes: number; width: number | null; height: number | null; kind: 'photo' | 'video'; thumb?: string }
   if (video) {
     out = { ...(await streamVideo(db, head, video, 'events', `${body.event_id}/${crypto.randomUUID()}`)), width: null, height: null, kind: 'video' }
   } else {
-    const r = await rebuildImage(db, body.staging_path, ['jpeg', 'png', 'mp4', 'mov'], 600, 480)
+    const r = await rebuildImage(head, ['jpeg', 'png'], 600, 480)
     if (!r.raster) throw new Rejected('wrong_type', { allowed: 'JPG, PNG, MP4, MOV' })
     const ext = r.raster.type === 'jpeg' ? 'jpg' : 'png'
     const id = crypto.randomUUID()
@@ -214,11 +265,10 @@ Deno.serve(
         return json(req, 200, { ok: true, id, path: out.path })
       }
 
-      const { data: blob, error: dlErr } = await db.storage.from('staging').download(body.staging_path)
-      if (dlErr || !blob) throw new Rejected('missing')
-      const original = new Uint8Array(await blob.arrayBuffer())
+      const head = await readHead(db, body.staging_path)
+      if (head.total > MAX_FILE) throw new Rejected('too_large', { max: '50 MB' })
+      const original = await readCapped(head.url, MAX_FILE, '50 MB')
       if (original.length === 0) throw new Rejected('unreadable')
-      if (original.length > MAX_FILE) throw new Rejected('too_large', { max: '50 MB' })
 
       const rule = RULES[`${body.library}:${body.kind}`]!
       const type = sniff(original)
@@ -233,7 +283,7 @@ Deno.serve(
       let height: number | null = null
       let hasAlpha = false
       if (type === 'png' || type === 'jpeg') {
-        const r = await processRaster(original, type, { minShortSide: rule.minShortSide ?? 1, needsTransparency: rule.transparent })
+        const r = await processRaster(original, type, { minShortSide: rule.minShortSide ?? 1, needsTransparency: rule.transparent, maxBytes: MAX_FILE })
         ;({ bytes, width, height, hasAlpha } = r)
         finalType = r.type
       } else if (type === 'svg') bytes = cleanSvg(original)

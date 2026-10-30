@@ -226,7 +226,8 @@ export const processRaster = async (
   type: FileType,
   opts: { minShortSide: number; needsTransparency?: boolean; maxBytes?: number; thumb?: number },
 ): Promise<RasterResult> => {
-  if (b.length > (opts.maxBytes ?? 30 * 1024 * 1024)) throw new Rejected('too_large', { max: '30 MB' })
+  const maxBytes = opts.maxBytes ?? 30 * 1024 * 1024
+  if (b.length > maxBytes) throw new Rejected('too_large', { max: `${Math.round(maxBytes / 1024 / 1024)} MB` })
   if (type !== 'png' && type !== 'jpeg') throw new Rejected('wrong_type', { allowed: 'PNG, JPG' })
   // Read the declared size from the header first: a tiny file can claim a gigantic image (decompression bomb).
   const declared = headerSize(b, type)

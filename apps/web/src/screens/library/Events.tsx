@@ -46,16 +46,20 @@ const emptyDraft = (): Draft => ({
 /** Signed links for previews (and full files, for opening). */
 const signMedia = (media: EventMedia[]) => signedUrls('events', [...new Set(media.flatMap((m) => [previewPath(m), m.path]))])
 
-/** Removes stored files first (so nothing is left behind), then the rows. */
+/** Removes stored files first (so nothing is left behind), then the rows. Stops if the files can't be removed. */
 const removeMedia = async (media: EventMedia[]) => {
   const paths = media.flatMap((m) => (m.thumb_path ? [m.path, m.thumb_path] : [m.path]))
-  for (let i = 0; i < paths.length; i += 100) await supabase!.storage.from('events').remove(paths.slice(i, i + 100))
+  for (let i = 0; i < paths.length; i += 100) {
+    const { error } = await supabase!.storage.from('events').remove(paths.slice(i, i + 100))
+    if (error) return false
+  }
   const ids = media.map((m) => m.id)
   for (let i = 0; i < ids.length; i += 100)
     await supabase!
       .from('event_media')
       .delete()
       .in('id', ids.slice(i, i + 100))
+  return true
 }
 
 const usePlayerNames = () => {
@@ -99,6 +103,7 @@ export const Events = ({ isAdmin, canAdd, userId }: { isAdmin: boolean; canAdd: 
         names={names}
         isAdmin={isAdmin}
         canEdit={isAdmin || (canAdd && open.created_by === userId)}
+        userId={userId}
         canAdd={canAdd}
         onBack={() => (setOpenId(null), reload())}
         onEdit={() =>
@@ -228,6 +233,7 @@ const EventDetail = ({
   isAdmin,
   canEdit,
   canAdd,
+  userId,
   onBack,
   onEdit,
   onDeleted,
@@ -239,6 +245,7 @@ const EventDetail = ({
   isAdmin: boolean
   canEdit: boolean
   canAdd: boolean
+  userId: string
   onBack: () => void
   onEdit: () => void
   onDeleted: () => void
@@ -268,7 +275,10 @@ const EventDetail = ({
   const shown = media.filter((m) =>
     !show ? true : show === 'untagged' ? m.event_media_players.length === 0 : m.event_media_players.some((p) => p.player_id === show),
   )
-  const picked = media.filter((m) => selected.has(m.id))
+  // Designers tag and remove only what they uploaded; Admins handle everything.
+  const mine = (m: EventMedia) => isAdmin || m.created_by === userId
+  const picked = media.filter((m) => selected.has(m.id) && mine(m))
+  const notMine = media.filter((m) => selected.has(m.id) && !mine(m)).length
 
   const toggleTag = async (playerId: string) => {
     if (picked.length === 0) return
@@ -279,7 +289,10 @@ const EventDetail = ({
         .from('event_media_players')
         .delete()
         .eq('player_id', playerId)
-        .in('media_id', [...selected])
+        .in(
+          'media_id',
+          picked.map((m) => m.id),
+        )
     } else {
       const missing = picked.filter((m) => !m.event_media_players.some((p) => p.player_id === playerId))
       await supabase!.from('event_media_players').insert(missing.map((m) => ({ media_id: m.id, player_id: playerId })))
@@ -299,7 +312,7 @@ const EventDetail = ({
 
   const deleteEvent = async () => {
     if (!window.confirm(t('events.delete.confirm'))) return
-    await removeMedia(media)
+    if (!(await removeMedia(media))) return window.alert(t('common.error.generic'))
     await supabase!.from('events').delete().eq('id', event.id)
     onDeleted()
   }
@@ -385,6 +398,7 @@ const EventDetail = ({
               <p>
                 <strong>{t('events.tag.title')}</strong> <span className="cell-sub">{t('events.tag.hint')}</span>
               </p>
+              {notMine > 0 && <p className="hint">{t('events.tag.notMine', { n: notMine })}</p>}
               {players.length === 0 && <p className="hint">{t('events.tag.noPlayers')}</p>}
               <div className="chip-row">
                 {players.map((p) => {

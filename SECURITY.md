@@ -56,8 +56,19 @@ chat or log.
   - Player videos (MP4/MOV, up to 500 MB): too large to rebuild on the server, so only the first 4 KB are read and
     must be an ISO media `ftyp` box with an expected brand; the file is then streamed into the `players` bucket
     with a fixed `video/mp4` or `video/quicktime` type and only ever played through `<video>` (CSP `media-src` is
-    the project's storage host only). Accepted risk: content after the header isn't validated; only Admins with
-    two-step sign-in can upload.
+    the project's storage host only). While streaming, the first bytes must still match the checked header (a
+    staged file can't be swapped between check and copy) and the size limit is enforced on the bytes that flow.
+    Accepted risk: content after the header isn't validated. Admins (two-step sign-in) can upload videos to players;
+    Admins and Social designers to events. Videos have their own limits: 30 a minute and 300 a day per person.
+  - Every staged file's size is read before downloading, and downloads stop at the limit (50 MB for images), so a
+    large staged file can't exhaust the function's memory.
+- Events: Admins (`aal2`) and Social designers create events and add files; Merch designers only look. Designers may
+  stage files in their own folder; the server lets them add those only to an event. Event photos get a small
+  server-made preview. Tags: only the uploader or an Admin tags a file, only with players the tagger can see; a tag
+  that hides a file (a player designers may not use) can only be removed by an Admin, so the rights hiding holds
+  even against an unfiltered delete. Hidden files and previews can't be opened (storage policy follows the row).
+  Known housekeeping gap: files are removed by the app before their rows; a scheduled sweep for orphaned files
+  (unreadable, so no exposure) is planned with the Phase 3 jobs.
 - Sub-brands are a table: everyone reads, only an Admin with `aal2` adds, renames or removes (pgTAP-tested).
 - Library rows can't be repointed at another file; a new version can only replace a file of the same owner and kind,
   versions are unique per lineage, and replacements are serialised. Every change is in the audit log.

@@ -95,13 +95,23 @@ create policy event_media_update on public.event_media for update to authenticat
 create policy event_media_delete on public.event_media for delete to authenticated
   using ((select private.is_admin()) or (created_by = (select auth.uid()) and (select private.can_add_event_media())));
 
--- Player tags.
+-- Player tags: the person who uploaded the file (or an Admin) tags it, and only with players they can see.
+-- A tag that hides a file (a player designers may not use) can only be removed by an Admin, so rights
+-- hiding can't be undone by a designer.
 create policy event_media_players_read on public.event_media_players for select to authenticated
   using ((select private.is_admin()) or private.media_usable(media_id));
 create policy event_media_players_insert on public.event_media_players for insert to authenticated
-  with check ((select private.can_add_event_media()) and created_by = (select auth.uid()));
+  with check (
+    created_by = (select auth.uid())
+    and exists (select 1 from public.players p where p.id = player_id)
+    and ((select private.is_admin())
+         or ((select private.has_role('social_designer'))
+             and exists (select 1 from public.event_media m where m.id = media_id and m.created_by = (select auth.uid())))));
 create policy event_media_players_delete on public.event_media_players for delete to authenticated
-  using ((select private.can_add_event_media()));
+  using ((select private.is_admin())
+         or ((select private.has_role('social_designer'))
+             and private.media_usable(media_id)
+             and exists (select 1 from public.event_media m where m.id = media_id and m.created_by = (select auth.uid()))));
 
 grant select, delete on public.events, public.event_media, public.event_media_players to authenticated;
 grant insert (name, kind, starts_on, ends_on, sub_brand, opponent, location, notes),
