@@ -45,8 +45,7 @@ test('sends strict security headers', async ({ request }) => {
   for (const { key, value } of vercel.headers[0]!.headers) expect(h[key.toLowerCase()]).toBe(value)
 })
 
-// Enable once the CSP names ONIC's exact Supabase project instead of *.supabase.co.
-test.fixme('cannot send data to another Supabase project', async ({ page }) => {
+test('cannot send data to another Supabase project', async ({ page }) => {
   await page.goto('/')
   const blocked = await page.evaluate(() => fetch('https://evil-project.supabase.co').then(() => false, () => true))
   expect(blocked).toBe(true)

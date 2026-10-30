@@ -22,7 +22,7 @@ values:
 
 | Header | Value / purpose |
 |---|---|
-| Content-Security-Policy | `default-src 'none'`; scripts and styles only from our own origin (no inline, no eval); network only to Supabase; no frames; `frame-ancestors 'none'` |
+| Content-Security-Policy | `default-src 'none'`; scripts and styles only from our own origin (no inline, no eval); network only to ONIC's Supabase project; no frames; `frame-ancestors 'none'` |
 | Strict-Transport-Security | 2 years, subdomains, preload |
 | X-Frame-Options | `DENY` |
 | X-Content-Type-Options | `nosniff` |
@@ -65,7 +65,7 @@ cover the same ground in CI.
 | 0 | Supabase Edge Functions get only a few seconds of processing time per call, which may not be enough for server-side rendering of posts | Verify in Phase 4; fallback is a Vercel function that holds no third-party secrets |
 | 0 | Supabase session is stored in browser storage, so an XSS could read it | Mitigated by a strict CSP (no inline/eval, no third-party scripts), React escaping, the no-raw-HTML lint rule, 5-minute access tokens and the 30-minute idle timeout |
 | 0 | Electronegativity no longer applies (moved from desktop to web) | Replaced by header + CSP browser tests and Semgrep |
-| 0 | CSP allows any `*.supabase.co` host, so stolen data could be sent to another Supabase project | **Open** — narrowed to ONIC's exact project host as soon as the project ID is known |
+| 0 | CSP allows any `*.supabase.co` host, so stolen data could be sent to another Supabase project | Fixed — CSP names only `yjwmdwuhrjuvafgfvdsc.supabase.co`; a browser test checks another project is blocked |
 | 0 | Hosted Supabase auth settings can differ from `config.toml` | **Open** — Phase 1 pushes config and adds a drift check |
 | 0 | Semgrep registry rules are fetched at run time and can change | Accepted: they only add checks; the scanner image itself is pinned by digest |
 | 0 | Skipped CodeQL/dependency-review jobs count as passing | Branch protection requires `verify`, `secrets` and `sast` explicitly |
